@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import uvicorn
 from app.core.config import settings
+from app.api.analytics import router as analytics_router
 
 
 app = FastAPI(
@@ -42,4 +43,10 @@ if __name__ == "__main__":
         port=8000,
         reload=settings.DEBUG
         )
+
+app.include_router(analytics_router)
+
+@app.get("/")
+def root():
+    return {"message": "Welcome to QazVelo-Engine - Real-Time Market Analytics API"}
     
