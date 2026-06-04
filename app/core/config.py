@@ -5,16 +5,15 @@ from typing_extensions import Annotated
 
 
 def parse_cors_origins(v: Any)->List[str]:
-    if isinstance(v, str):
+    if isinstance(v, str) and not v.startswith("["):
         return [i.strip() for i in v.split(",")]
     elif isinstance(v, list):
         return v
-    raise []
+    return ["http://localhost:3000"]
 
 class Settings(BaseSettings):
     model_config=SettingsConfigDict(
         env_file=".env",
-        env_ignore_empty=True,
         extra="ignore"
         )
 
