@@ -4,7 +4,7 @@ project(QazVeloEngineCpp VERSION 0.1.0)
 set(CMAKE_CXX_STRANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(python 3.11 COMPONENTS Interpreter Development.Moudle REQUIRED)
+find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(pybind11 REQUIRED)
 
 set(SOURCE_FILES
