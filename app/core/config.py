@@ -4,13 +4,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Annotated
 
 
-def parse_cors_origins(v: Any)->List[str]:
-    if isinstance(v, str) and not v.startswith("["):
-        return [i.strip() for i in v.split(",")]
-    elif isinstance(v, list):
-        return v
-    return ["http://localhost:3000"]
-
 class Settings(BaseSettings):
     model_config=SettingsConfigDict(
         env_file=".env",
@@ -27,13 +20,8 @@ class Settings(BaseSettings):
     ALGORITHM: str="HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int=60
 
-    ALLOWED_ORIGINS: Annotated[List[str], BeforeValidator(parse_cors_origins)] = [
-
-        "http://localhost:3000"
-    ]
-    ALLOWED_HOSTS: Annotated[List[str], BeforeValidator(parse_cors_origins)] = [
-        "localhost", "127.0.0.1"
-    ]
+    ALLOWED_ORIGINS: List[str]=["http://localhost:3000"]
+    ALLOWED_HOSTS: List[str]=["localhost", "127.0.0.1"]
 
     DATABASE_URL: str="postgresql+asyncpg://postgres:postgres@localhost:5432/QazVelo_db"
     KAFKA_BOOTSTRAP_SERVERS: str="localhost:9092"
