@@ -1,10 +1,10 @@
-from typing import List
+from typing import List, Any 
 from pydantic import AnyHttpUrl, BeforeValidator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Annotated
 
 
-def parse_cors_origins(v: repr)->List[str]:
+def parse_cors_origins(v: Any)->List[str]:
     if isinstance(v, str):
         return [i.strip() for i in v.split(",")]
     elif isinstance(v, list):
