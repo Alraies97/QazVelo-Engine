@@ -1,0 +1,28 @@
+# Python bytecode & cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+ENV/
+.env
+
+# C++ Build and Compiled files
+build/
+CMakeCache.txt
+CMakeFiles/
+CMakeSettings.json
+Makefile
+cmake_install.cmake
+*.so
+*.dylib
+*.dll
+*.lib
+*.a
+*.obj
+
+# IDE & OS files
+.vscode/
+.DS_Store
