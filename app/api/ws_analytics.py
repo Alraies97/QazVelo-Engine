@@ -13,7 +13,7 @@ async def websocket_endpoint(websocket: WebSocket, ticker: str,window: int = 5):
     print(f"Client connected for ticker: {ticker}")
 
     try:
-        base_prices = MarketDataService.get_historical_prices(ticker=ticker.upper(), period="1mo")
+        base_prices = MarketDataService.get_historical_price(ticker=ticker.upper(), period="1mo")
 
         if not base_prices:
             await websocket.send_json({"error": f"No historical data found for ticker: {ticker}"})
