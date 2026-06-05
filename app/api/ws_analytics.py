@@ -49,6 +49,11 @@ async def websocket_endpoint(websocket: WebSocket, ticker: str,window: int = 5):
 
     except WebSocketDisconnect:
         print(f"Client disconnected from ticker: {ticker}")
+
+    except Exception as e:
+        print(f"Error in WebSocket for ticker {ticker}: {e}")
+        await websocket.send_json({"error": "An error occurred while processing data."})
+        await websocket.close()
     
 
 
