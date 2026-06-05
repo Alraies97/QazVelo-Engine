@@ -25,8 +25,12 @@ async def websocket_endpoint(websocket: WebSocket, ticker: str,window: int = 5):
         while True:
             last_price = rolling_prices[-1]
 
-            price_change = last_price * random.uniform(-0.005, 0.005)
-            new_live_price = round(last_price + price_change, 2)
+            volatility_factor = 0.0015 
+            change_percent = random.uniform(-volatility_factor, volatility_factor)
+            new_live_price = round(last_price * (1 + change_percent), 2)
+
+            if new_live_price <= 0:
+               new_live_price = last_price
 
             rolling_prices.append(new_live_price)
             if len(rolling_prices) > 100:
