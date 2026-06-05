@@ -20,7 +20,12 @@ class Settings(BaseSettings):
     ALGORITHM: str="HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int=60
 
-    ALLOWED_ORIGINS: List[str]=["http://localhost:3000"]
+    ALLOWED_ORIGINS: List[str]=[
+        "http://localhost:5173",    
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",    
+        "http://127.0.0.1:8000"
+        ]
     ALLOWED_HOSTS: List[str]=["localhost", "127.0.0.1"]
 
     DATABASE_URL: str="postgresql+asyncpg://postgres:postgres@localhost:5432/QazVelo_db"
