@@ -32,7 +32,7 @@ async def register(user_in: UserCreate):
     return new_user
 
 
-@router.post("login",response_model=TokenResponse,status_code=status.HTTP_200_OK)
+@router.post("/login",response_model=TokenResponse,status_code=status.HTTP_200_OK)
 async def login(credentials: UserLogin):
 
     user = None

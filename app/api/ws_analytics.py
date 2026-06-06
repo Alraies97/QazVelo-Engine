@@ -1,8 +1,17 @@
 import asyncio
 import random
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from app.services.market_data import MarketDataService
 from app.services.analytics import MarketAnalyticsService
+import jwt
+from app.core.security import ALGORITHM, SECRET_KEY
+
+async def get_current_user_from_token(token: str) -> str | None:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("sub")
+    except Exception:
+        return None
 
 router = APIRouter(tags=["Real-time Streaming"])
 
@@ -11,6 +20,26 @@ async def websocket_endpoint(websocket: WebSocket, ticker: str,window: int = 5):
 
     await websocket.accept()
     print(f"Client connected for ticker: {ticker}")
+
+    try:
+        auth_data = await websocket.receive_json()
+        token = auth_data.get("token")
+        if not token:
+            print("No token provided")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        username = await get_current_user_from_token(token)
+        if not username:
+            print("Invalid token")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+            
+        print(f"User {username} authenticated for ticker {ticker}")
+    except Exception as e:
+        print(f"Authentication error: {e}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
 
     try:
         base_prices = MarketDataService.get_historical_price(ticker=ticker.upper(), period="1mo")
@@ -58,9 +87,4 @@ async def websocket_endpoint(websocket: WebSocket, ticker: str,window: int = 5):
         print(f"Error in WebSocket for ticker {ticker}: {e}")
         await websocket.send_json({"error": "An error occurred while processing data."})
         await websocket.close()
-    
-
-
-
-
     
