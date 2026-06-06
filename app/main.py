@@ -5,7 +5,7 @@ import uvicorn
 from app.core.config import settings
 from app.api.analytics import router as analytics_router
 from app.api.ws_analytics import router as ws_router
-
+from app.api.auth import router as auth_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -14,6 +14,10 @@ app = FastAPI(
     debug=settings.DEBUG,
     openapi_url=f"{settings.API_V1_STR}/openapi.json" if settings.DEBUG else None,
 )
+
+app.include_router(analytics_router)
+app.include_router(ws_router)
+app.include_router(auth_router)
 
 app.add_middleware(
     TrustedHostMiddleware,
@@ -45,8 +49,7 @@ if __name__ == "__main__":
         reload=settings.DEBUG
         )
 
-app.include_router(analytics_router)
-app.include_router(ws_router)
+
 
 @app.get("/")
 def root():
