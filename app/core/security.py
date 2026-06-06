@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, tiemzone
+from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 import jwt
 
@@ -9,11 +9,13 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    password_bytes = password.encode("utf-8")[:72]
+    return pwd_context.hash(password_bytes)
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    plain_password_bytes = plain_password.encode("utf-8")[:72]
+    return pwd_context.verify(plain_password_bytes, hashed_password)
 
 
 def create_token(data: dict) -> str:

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, status, HTTPException
 from app.schemas.users import UserLogin, TokenResponse, UserCreate, UserResponse
+from app.core.security import hash_password, verify_password, create_token
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -21,7 +22,7 @@ async def register(user_in: UserCreate):
         "id":USER_ID_COUNTER,
         "username":user_in.username,
         "email":user_in.email,
-        "password":hashed,
+        "hashed_password":hashed,
         "is_active":True,
     }
 
