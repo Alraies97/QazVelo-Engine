@@ -1,7 +1,8 @@
-from fastapi import APIRouter, status, HTTPException, Depends
+from fastapi import APIRouter, status, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.schemas.users import UserResponse, UserUpdate, ChangePasswordRequest
 from app.core.security import verify_password, hash_password
+from fastapi_limiter.depends import RateLimiter
 import jwt
 from app.core.security import SECRET_KEY, ALGORITHM
 from app.api.auth import USERS_DB
@@ -43,8 +44,14 @@ async def get_current_user_profile(current_user: dict = Depends(get_current_user
     }
 
 
-@router.put("/update", response_model=UserResponse, status_code=status.HTTP_200_OK)
+@router.put(
+    "/update",
+    response_model=UserResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RateLimiter(times=10, seconds=60))]
+)
 async def update_user_profile(
+    request: Request,
     payload: UserUpdate,
     current_user: dict = Depends(get_current_user)
 ):
@@ -71,8 +78,13 @@ async def update_user_profile(
     }
 
 
-@router.post("/change-password", status_code=status.HTTP_200_OK)
+@router.post(
+    "/change-password",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RateLimiter(times=3, seconds=60))]
+)
 async def change_password(
+    request: Request,
     payload: ChangePasswordRequest,
     current_user: dict = Depends(get_current_user)
 ):

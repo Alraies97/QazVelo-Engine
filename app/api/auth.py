@@ -1,6 +1,7 @@
-from fastapi import APIRouter, status, HTTPException
+from fastapi import APIRouter, status, HTTPException, Request, Depends
 from app.schemas.users import UserLogin, TokenResponse, UserCreate, UserResponse, RefreshRequest
 from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token
+from fastapi_limiter.depends import RateLimiter
 import jwt
 from app.core.security import SECRET_KEY, ALGORITHM
 
@@ -17,7 +18,7 @@ async def register(user_in: UserCreate):
     for u in USERS_DB.values():
         if u["username"]==user_in.username or u["email"]==user_in.email:
             raise HTTPException(status_code=400,detail="username or email already registered")
-    
+
 
     hashed = hash_password(user_in.password)
     new_user={
@@ -34,8 +35,13 @@ async def register(user_in: UserCreate):
     return new_user
 
 
-@router.post("/login", response_model=TokenResponse, status_code=status.HTTP_200_OK)
-async def login(credentials: UserLogin):
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RateLimiter(times=5, seconds=60))]
+)
+async def login(request: Request, credentials: UserLogin):
 
     user = None
     for u in USERS_DB.values():
@@ -52,8 +58,13 @@ async def login(credentials: UserLogin):
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 
-@router.post("/refresh", response_model=TokenResponse, status_code=status.HTTP_200_OK)
-async def refresh_token(payload: RefreshRequest):
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RateLimiter(times=5, seconds=60))]
+)
+async def refresh_token(request: Request, payload: RefreshRequest):
     try:
         decoded = jwt.decode(payload.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         if decoded.get("type") != "refresh":
