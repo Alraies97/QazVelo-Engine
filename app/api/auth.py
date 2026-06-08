@@ -1,6 +1,8 @@
 from fastapi import APIRouter, status, HTTPException
-from app.schemas.users import UserLogin, TokenResponse, UserCreate, UserResponse
-from app.core.security import hash_password, verify_password, create_token
+from app.schemas.users import UserLogin, TokenResponse, UserCreate, UserResponse, RefreshRequest
+from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token
+import jwt
+from app.core.security import SECRET_KEY, ALGORITHM
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -32,7 +34,7 @@ async def register(user_in: UserCreate):
     return new_user
 
 
-@router.post("/login",response_model=TokenResponse,status_code=status.HTTP_200_OK)
+@router.post("/login", response_model=TokenResponse, status_code=status.HTTP_200_OK)
 async def login(credentials: UserLogin):
 
     user = None
@@ -40,11 +42,34 @@ async def login(credentials: UserLogin):
         if u["username"] == credentials.username:
             user=u
             break
-    
+
     if not user or not verify_password(credentials.password,user["hashed_password"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Incorrect username or password")
 
 
-    access_token=create_token(data={"sub":user["username"],"user_id":user["id"]})
-    return {"access_token":access_token,"token_type":"bearer"}
+    access_token = create_access_token(data={"sub": user["username"], "user_id": user["id"]})
+    refresh_token = create_refresh_token(data={"sub": user["username"], "user_id": user["id"]})
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+
+@router.post("/refresh", response_model=TokenResponse, status_code=status.HTTP_200_OK)
+async def refresh_token(payload: RefreshRequest):
+    try:
+        decoded = jwt.decode(payload.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if decoded.get("type") != "refresh":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+
+        username = decoded.get("sub")
+        user_id = decoded.get("user_id")
+        if not username or not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token has expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    new_access_token = create_access_token(data={"sub": username, "user_id": user_id})
+    new_refresh_token = create_refresh_token(data={"sub": username, "user_id": user_id})
+    return {"access_token": new_access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
 
