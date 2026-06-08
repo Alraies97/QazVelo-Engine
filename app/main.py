@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.api.analytics import router as analytics_router
 from app.api.ws_analytics import router as ws_router
 from app.api.auth import router as auth_router
+from app.api.users import router as users_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -18,6 +19,7 @@ app = FastAPI(
 app.include_router(analytics_router)
 app.include_router(ws_router)
 app.include_router(auth_router)
+app.include_router(users_router)
 
 app.add_middleware(
     TrustedHostMiddleware,
