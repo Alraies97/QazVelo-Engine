@@ -15,8 +15,11 @@ USER_ID_COUNTER = 1
 async def register(user_in: UserCreate):
     global USER_ID_COUNTER
 
+    if user_in.username in USERS_DB:
+        raise HTTPException(status_code=400,detail="username already registered")
+
     for u in USERS_DB.values():
-        if u["username"]==user_in.username or u["email"]==user_in.email:
+        if u["email"]==user_in.email or u["email"]==user_in.email:
             raise HTTPException(status_code=400,detail="username or email already registered")
 
 
@@ -29,7 +32,7 @@ async def register(user_in: UserCreate):
         "is_active":True,
     }
 
-    USERS_DB[USER_ID_COUNTER]=new_user
+    USERS_DB[user_in.username]=new_user
     USER_ID_COUNTER+=1
 
     return new_user

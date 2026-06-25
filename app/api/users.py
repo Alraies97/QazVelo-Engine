@@ -36,12 +36,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 @router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
 async def get_current_user_profile(current_user: dict = Depends(get_current_user)):
-    return {
-        "id": current_user["id"],
-        "username": current_user["username"],
-        "email": current_user["email"],
-        "is_active": current_user["is_active"],
-    }
+    return current_user
 
 
 @router.put(
