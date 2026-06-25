@@ -10,15 +10,22 @@ from app.api.analytics import router as analytics_router
 from app.api.ws_analytics import router as ws_router
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
+from app.core.database import engine, Base
+from app.models.users import UserModel
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     redis_instance = redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
     await FastAPILimiter.init(redis_instance)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     yield
-    await FastAPILimiter.close()
+
     await redis_instance.close()
+    await engine.dispose()
+
 
 
 app = FastAPI(

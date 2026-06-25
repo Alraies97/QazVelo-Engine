@@ -1,33 +1,39 @@
 from fastapi import APIRouter, status, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.schemas.users import UserResponse, UserUpdate, ChangePasswordRequest
-from app.core.security import verify_password, hash_password
+from app.core.security import verify_password, hash_password, SECRET_KEY, ALGORITHM
 from fastapi_limiter.depends import RateLimiter
 import jwt
-from app.core.security import SECRET_KEY, ALGORITHM
-from app.api.auth import USERS_DB
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from app.core.database import get_db
+from app.models.users import UserModel
 
 router = APIRouter(prefix="/users", tags=["Users"])
 security = HTTPBearer()
 
-
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+) -> UserModel:
     try:
         decoded = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
         if decoded.get("type") != "access":
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
-
+            
         username = decoded.get("sub")
         user_id = decoded.get("user_id")
         if not username or not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
-
-        user = USERS_DB.get(username)
+            
+        result = await db.execute(select(UserModel).where(UserModel.username == username))
+        user = result.scalar_one_or_none()
+        
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-
+            
         return user
-
+        
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Access token has expired")
     except jwt.InvalidTokenError:
@@ -35,7 +41,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 
 @router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
-async def get_current_user_profile(current_user: dict = Depends(get_current_user)):
+async def get_current_user_profile(current_user: UserModel = Depends(get_current_user)):
     return current_user
 
 
@@ -48,29 +54,28 @@ async def get_current_user_profile(current_user: dict = Depends(get_current_user
 async def update_user_profile(
     request: Request,
     payload: UserUpdate,
-    current_user: dict = Depends(get_current_user)
+    current_user: UserModel = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    user_id = current_user["id"]
-
     if payload.username:
-        for u in USERS_DB.values():
-            if u["id"] != user_id and u["username"] == payload.username:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken")
-        USERS_DB[user_id]["username"] = payload.username
+        result = await db.execute(
+            select(UserModel).where(UserModel.username == payload.username, UserModel.id != current_user.id)
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken")
+        current_user.username = payload.username
 
     if payload.email:
-        for u in USERS_DB.values():
-            if u["id"] != user_id and u["email"] == payload.email:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
-        USERS_DB[user_id]["email"] = payload.email
+        result = await db.execute(
+            select(UserModel).where(UserModel.email == payload.email, UserModel.id != current_user.id)
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+        current_user.email = payload.email
 
-    updated_user = USERS_DB[user_id]
-    return {
-        "id": updated_user["id"],
-        "username": updated_user["username"],
-        "email": updated_user["email"],
-        "is_active": updated_user["is_active"],
-    }
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
 
 
 @router.post(
@@ -81,12 +86,10 @@ async def update_user_profile(
 async def change_password(
     request: Request,
     payload: ChangePasswordRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: UserModel = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    user_id = current_user["id"]
-    user = USERS_DB[user_id]
-
-    if not verify_password(payload.old_password, user["hashed_password"]):
+    if not verify_password(payload.old_password, current_user.hashed_password):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect old password")
 
     new_password_bytes = payload.new_password.encode("utf-8")
@@ -96,7 +99,8 @@ async def change_password(
             detail="New password exceeds 72-byte limit for bcrypt"
         )
 
-    new_hashed = hash_password(payload.new_password)
-    USERS_DB[user_id]["hashed_password"] = new_hashed
-
+    # تشفير وتحديث الباسوورد
+    current_user.hashed_password = hash_password(payload.new_password)
+    
+    await db.commit()
     return {"message": "Password updated successfully"}
