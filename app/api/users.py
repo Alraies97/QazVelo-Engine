@@ -22,7 +22,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if not username or not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
 
-        user = USERS_DB.get(user_id)
+        user = USERS_DB.get(username)
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
