@@ -1,90 +1,64 @@
-import asyncio
-import random
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
-from app.services.market_data import MarketDataService
-from app.services.analytics import MarketAnalyticsService
-import jwt
-from app.core.security import ALGORITHM, SECRET_KEY
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import AsyncSessionLocal # نستخدم المصنع مباشرة داخل الـ WS loop
+from app.api.users import get_current_user
+from app.schemas.analytics import AnalyticsCreate
+from app.models.analytics import AnalyticsModel
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import ValidationError
+import json
 
-async def get_current_user_from_token(token: str) -> str | None:
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload.get("sub")
-    except Exception:
-        return None
+router = APIRouter(prefix="/ws", tags=["WebSockets"])
 
-router = APIRouter(tags=["Real-time Streaming"])
-
-@router.websocket("/ws/analytics/{ticker}")
-async def websocket_endpoint(websocket: WebSocket, ticker: str,window: int = 5):
-
+@router.websocket("/analytics")
+async def websocket_analytics_endpoint(
+    websocket: WebSocket,
+    token: str = Query(...) # استقبال التوكن في رابط الاتصال: ws://localhost:8000/ws/analytics?token=YOUR_JWT
+):
+    # 1. قبول اتصال الـ WebSocket الأولي
     await websocket.accept()
-    print(f"Client connected for ticker: {ticker}")
-
+    
+    # 2. المصادقة الأمنية وفحص التوكن قبل البدء في استقبال البيانات
     try:
-        auth_data = await websocket.receive_json()
-        token = auth_data.get("token")
-        if not token:
-            print("No token provided")
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-
-        username = await get_current_user_from_token(token)
-        if not username:
-            print("Invalid token")
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
+        # تحويل التوكن يدويًا ليتوافق مع دالة الحماية المصممة سابقاً
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        
+        # فتح جلسة قاعدة بيانات مخصصة للتحقق
+        async with AsyncSessionLocal() as db:
+            current_user = await get_current_user(credentials=credentials, db=db)
             
-        print(f"User {username} authenticated for ticker {ticker}")
-    except Exception as e:
-        print(f"Authentication error: {e}")
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+    except Exception:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired token")
         return
 
     try:
-        base_prices = MarketDataService.get_historical_price(ticker=ticker.upper(), period="1mo")
-
-        if not base_prices:
-            await websocket.send_json({"error": f"No historical data found for ticker: {ticker}"})
-            await websocket.close()
-            return
-
-        rolling_prices = base_prices[-30:]
-
         while True:
-            last_price = rolling_prices[-1]
-
-            volatility_factor = 0.0015 
-            change_percent = random.uniform(-volatility_factor, volatility_factor)
-            new_live_price = round(last_price * (1 + change_percent), 2)
-
-            if new_live_price <= 0:
-               new_live_price = last_price
-
-            rolling_prices.append(new_live_price)
-            if len(rolling_prices) > 100:
-                rolling_prices.pop(0)
-
-
-            analytics_result = MarketAnalyticsService.process_market_indicators(
-                prices=rolling_prices,
-                period=window
-            )
-
-            payload = {
-                "ticker": ticker.upper(),
-                "live_price": new_live_price,
-                "metrics": analytics_result.get("metrics", {})
-            }
-
-            await websocket.send_json(payload)
-            await asyncio.sleep(1)
-
+            data = await websocket.receive_text()
+            
+            try:
+                raw_json = json.loads(data)
+                
+                validated_data = AnalyticsCreate(**raw_json)
+                
+                db_record = AnalyticsModel(
+                    user_id=current_user.id,
+                    metric_name=validated_data.metric_name,
+                    metric_value=validated_data.metric_value,
+                    extra_payload=validated_data.extra_payload
+                )
+                
+                async with AsyncSessionLocal() as db:
+                    db.add(db_record)
+                    await db.commit()
+                
+                await websocket.send_json({
+                    "status": "success", 
+                    "message": "Data persisted safely",
+                    "metric": validated_data.metric_name
+                })
+                
+            except (json.JSONDecodeError, ValidationError) as e:
+                await websocket.send_json({"status": "error", "message": "Invalid data format"})
+                
     except WebSocketDisconnect:
-        print(f"Client disconnected from ticker: {ticker}")
-
-    except Exception as e:
-        print(f"Error in WebSocket for ticker {ticker}: {e}")
-        await websocket.send_json({"error": "An error occurred while processing data."})
-        await websocket.close()
-    
+        print(f"Client {current_user.username} disconnected from analytics stream.")
