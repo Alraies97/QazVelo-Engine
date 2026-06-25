@@ -28,7 +28,7 @@ class Settings(BaseSettings):
         ]
     ALLOWED_HOSTS: List[str]=["localhost", "127.0.0.1"]
 
-    DATABASE_URL: str="postgresql+asyncpg://postgres:postgres@localhost:5432/QazVelo_db"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:1234@localhost:5432/qazvelo_db"  
     KAFKA_BOOTSTRAP_SERVERS: str="localhost:9092"
     REDIS_URL: str="redis://localhost:6379"
 
