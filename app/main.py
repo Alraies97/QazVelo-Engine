@@ -5,9 +5,6 @@ from contextlib import asynccontextmanager
 import uvicorn
 import redis.asyncio as redis
 from fastapi_limiter import FastAPILimiter
-from fastapi_limiter.errors import RateLimitExceeded
-from fastapi import Request
-from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.analytics import router as analytics_router
 from app.api.ws_analytics import router as ws_router
@@ -33,13 +30,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-@app.exception_handler(RateLimitExceeded)
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(
-        status_code=429,
-        content={"detail": "Too many requests. Please try again later."},
-    )
 
 app.include_router(analytics_router)
 app.include_router(ws_router)
