@@ -12,6 +12,7 @@ from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.core.database import engine, Base
 from app.models.users import UserModel
+from app.models.analytics import AnalyticsModel
 
 
 @asynccontextmanager
