@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str="postgresql+asyncpg://postgres:postgres@localhost:5432/QazVelo_db"
     KAFKA_BOOTSTRAP_SERVERS: str="localhost:9092"
-    REDIS_URL: str="redis://localhost:6379/0"
+    REDIS_URL: str="redis://localhost:6379"
 
 settings=Settings()
 

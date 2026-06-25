@@ -43,20 +43,21 @@ async def register(user_in: UserCreate):
 )
 async def login(request: Request, credentials: UserLogin):
 
-    user = None
-    for u in USERS_DB.values():
-        if u["username"] == credentials.username:
-            user=u
-            break
-
-    if not user or not verify_password(credentials.password,user["hashed_password"]):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Incorrect username or password")
+        user = USERS_DB.get(credentials.username)
 
 
-    access_token = create_access_token(data={"sub": user["username"], "user_id": user["id"]})
-    refresh_token = create_refresh_token(data={"sub": user["username"], "user_id": user["id"]})
-    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+        dummy_hash = "$2b$12$K3v9gD0mK3v9gD0mK3v9gOuxVbC67x8OWhmCg8G2O8O8O8O8O8O8O"
+        target_hash = user["hashed_password"] if user else dummy_hash
+        
+        password_correct = verify_password(credentials.password, target_hash)
 
+        
+        if not user or not password_correct:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Incorrect username or password")
+
+        access_token = create_access_token(data={"sub": user["username"], "user_id": user["id"]})
+        refresh_token = create_refresh_token(data={"sub": user["username"], "user_id": user["id"]})
+        return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 @router.post(
     "/refresh",
