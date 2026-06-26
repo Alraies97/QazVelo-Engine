@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
+
 
 class AnalyticsCreate(BaseModel):
     metric_name: str = Field(..., examples=["BTC/USDT", "ORDER_BOOK_IMBALANCE", "LATENCY_MS"])
@@ -16,5 +17,11 @@ class AnalyticsResponse(BaseModel):
     extra_payload: Optional[Dict[str, Any]]
     timestamp: datetime
 
-    class Config:
-        from_attributes = True 
+    model_config = {"from_attributes": True}
+
+
+class PaginatedAnalyticsResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    results: List[AnalyticsResponse]
