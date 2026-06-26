@@ -46,7 +46,7 @@ app.include_router(users_router)
 
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=settings.ALLOWED_HOSTS
+    allowed_hosts=["*"]
     )
 
 app.add_middleware(
@@ -76,7 +76,4 @@ if __name__ == "__main__":
 
 
 
-@app.get("/")
-def root():
-    return {"message": "Welcome to QazVelo-Engine - Real-Time Market Analytics API"}
     
