@@ -24,6 +24,7 @@ websockets = "^16.0"
 bcrypt = "^5.0.0"
 psycopg2-binary = "^2.9.12"
 email-validator = "^2.3.0"
+httpx = "^0.28.1"
 
 [tool.poetry.group.dev.dependencies]
 black = "24.4.2"         
