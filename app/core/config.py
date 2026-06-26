@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: List[str]=["*"]
     ALLOWED_HOSTS: List[str]=["*"]
 
-    DATABASE_URL = "postgresql+asyncpg://postgres:1234@localhost:5432/qazvelo_db"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:1234@localhost:5432/qazvelo_db"
     KAFKA_BOOTSTRAP_SERVERS: str="localhost:9092"
     REDIS_URL: str="redis://localhost:6379"
 
