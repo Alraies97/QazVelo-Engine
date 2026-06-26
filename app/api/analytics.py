@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
 from typing import List
+from fastapi_limiter.depends import RateLimiter
 from app.core.database import get_db
 from app.api.users import get_current_user
 from app.models.users import UserModel
@@ -32,8 +33,13 @@ class MarketTickerRequest(BaseModel):
     }
 
 
-@router.post("/calculate", status_code=status.HTTP_200_OK)
+@router.post(
+    "/calculate",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RateLimiter(times=10, seconds=60))],
+)
 async def calculate_market_metrics(
+    request: Request,
     payload: MarketTickerRequest,
     current_user: UserModel = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -90,8 +96,10 @@ async def calculate_market_metrics(
     "/history",
     response_model=PaginatedAnalyticsResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RateLimiter(times=30, seconds=60))],
 )
 async def get_analytics_history(
+    request: Request,
     current_user: UserModel = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
