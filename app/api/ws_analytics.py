@@ -1,6 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import AsyncSessionLocal # نستخدم المصنع مباشرة داخل الـ WS loop
+from app.core.database import AsyncSessionLocal 
 from app.api.users import get_current_user
 from app.schemas.analytics import AnalyticsCreate
 from app.models.analytics import AnalyticsModel
@@ -13,21 +13,18 @@ router = APIRouter(prefix="/ws", tags=["WebSockets"])
 @router.websocket("/analytics")
 async def websocket_analytics_endpoint(
     websocket: WebSocket,
-    token: str = Query(...) # استقبال التوكن في رابط الاتصال: ws://localhost:8000/ws/analytics?token=YOUR_JWT
+    token: str = Query(...) 
 ):
-    # 1. قبول اتصال الـ WebSocket الأولي
     await websocket.accept()
     
-    # 2. المصادقة الأمنية وفحص التوكن قبل البدء في استقبال البيانات
     try:
-        # تحويل التوكن يدويًا ليتوافق مع دالة الحماية المصممة سابقاً
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
         
-        # فتح جلسة قاعدة بيانات مخصصة للتحقق
         async with AsyncSessionLocal() as db:
             current_user = await get_current_user(credentials=credentials, db=db)
             
-    except Exception:
+    except Exception as e:
+        print(f"❌ WebSocket Auth Error: {str(e)}")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired token")
         return
 
