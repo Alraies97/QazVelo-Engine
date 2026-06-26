@@ -1,0 +1,1 @@
+- [Replit git push workaround](replit-git-push.md) — Replit askpass interceptor blocks token-in-URL pushes; use `git -c url.<token-url>.insteadOf=` instead.
