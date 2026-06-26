@@ -22,20 +22,20 @@ kafka_producer: AIOKafkaProducer = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global kafka_producer
     redis_client = aioredis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
     await FastAPILimiter.init(redis_client)
 
-    kafka_producer = AIOKafkaProducer(
+    producer = AIOKafkaProducer(
         bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
         value_serializer=lambda v: json.dumps(v).encode('utf-8') 
     )
 
-    await kafka_producer.start()
+    await producer.start()
+    app.state.kafka_producer = producer
     print("🚀 [QazVelo-Engine] Kafka Producer started successfully!")
     yield
     
-    await kafka_producer.stop()
+    await producer.stop()
     await redis_client.close()
     print("🛑 [QazVelo-Engine] Services stopped cleanly.")
 

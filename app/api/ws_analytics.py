@@ -6,7 +6,6 @@ from app.models.analytics import AnalyticsModel
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
 import json
-from app.main import kafka_producer
 import app.main as main_module
 
 
@@ -20,10 +19,16 @@ async def websocket_analytics_endpoint(
 ):
     await websocket.accept()
 
+
+    producer = getattr(websocket.app.state, "kafka_producer", None)
+
+
+  
     # --- Authentication ---
     # Resolve user inside a short-lived session, then extract plain scalar
     # values immediately so we never carry a detached ORM instance.
     try:
+   
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
         async with AsyncSessionLocal() as auth_db:
             current_user = await get_current_user(credentials=credentials, db=auth_db)
@@ -43,10 +48,10 @@ async def websocket_analytics_endpoint(
                 try:
                     if isinstance(data,str):
                         raw_json = json.loads(data)
-                    
+
                     else:
                         raw_json = data
-                    
+
                     validated = AnalyticsCreate(**raw_json)
 
                     payload = {
@@ -58,7 +63,7 @@ async def websocket_analytics_endpoint(
 
                     import app.main as main_moudle
                     producer = getattr(main_module, "kafka_producer", None)
-                    
+
                     if producer:
                         await producer.send_and_wait("market_analytics", payload)
 
