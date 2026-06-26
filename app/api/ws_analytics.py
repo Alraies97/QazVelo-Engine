@@ -6,6 +6,9 @@ from app.models.analytics import AnalyticsModel
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
 import json
+from app.main import kafka_producer
+import app.main as main_module
+
 
 router = APIRouter(prefix="/ws", tags=["WebSockets"])
 
@@ -35,28 +38,40 @@ async def websocket_analytics_endpoint(
     try:
         async with AsyncSessionLocal() as db:
             while True:
-                data = await websocket.receive_text()
+                data = await websocket.receive_json()
 
                 try:
-                    raw_json = json.loads(data)
-                    validated: AnalyticsCreate = AnalyticsCreate(**raw_json)
+                    if isinstance(data,str):
+                        raw_json = json.loads(data)
+                    
+                    else:
+                        raw_json = data
+                    
+                    validated = AnalyticsCreate(**raw_json)
 
-                    db_record = AnalyticsModel(
-                        user_id=user_id,
-                        metric_name=validated.metric_name,
-                        metric_value=validated.metric_value,
-                        extra_payload=validated.extra_payload,
-                    )
-                    db.add(db_record)
-                    await db.commit()
-                    await db.refresh(db_record)
+                    payload = {
+                        "user_id": user_id,
+                        "metric_name": validated.metric_name,
+                        "metric_value": validated.metric_value,
+                        "extra_payload": validated.extra_payload
+                    }
 
-                    await websocket.send_json({
-                        "status": "success",
-                        "message": "Data persisted",
-                        "record_id": db_record.id,
-                        "metric": validated.metric_name,
-                    })
+                    import app.main as main_moudle
+                    producer = getattr(main_module, "kafka_producer", None)
+                    
+                    if producer:
+                        await producer.send_and_wait("market_analytics", payload)
+
+                        await websocket.send_json({
+                            "status": "success",
+                            "message": "Data queued for processing",
+                            "metric": validated.metric_name
+                        })
+                    else:
+                        await websocket.send_json({
+                            "status": "error",
+                            "message": "Kafka broker unavailable"
+                        })
 
                 except json.JSONDecodeError:
                     await websocket.send_json({"status": "error", "message": "Invalid JSON"})

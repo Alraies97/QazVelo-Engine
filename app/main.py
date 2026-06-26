@@ -14,15 +14,30 @@ from app.core.database import engine, Base
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
 from app.api import users
+from aiokafka import AIOKafkaProducer
+import json
+
+kafka_producer: AIOKafkaProducer = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global kafka_producer
     redis_client = aioredis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
     await FastAPILimiter.init(redis_client)
-    yield
 
+    kafka_producer = AIOKafkaProducer(
+        bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+        value_serializer=lambda v: json.dumps(v).encode('utf-8') 
+    )
+
+    await kafka_producer.start()
+    print("🚀 [QazVelo-Engine] Kafka Producer started successfully!")
+    yield
+    
+    await kafka_producer.stop()
     await redis_client.close()
+    print("🛑 [QazVelo-Engine] Services stopped cleanly.")
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 

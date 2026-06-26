@@ -26,3 +26,11 @@ cmake_install.cmake
 # IDE & OS files
 .vscode/
 .DS_Store
+# --- Apache Kafka & Zookeeper Binaries and Logs ---
+kafka_2.13-3.4.0/
+kafka_2.13-3.4.0.tgz
+apache-zookeeper-*/
+zookeeper/
+kafka-logs/
+*.tgz
+*.tar.gz
