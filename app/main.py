@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
-import redis.asyncio as redis
+import redis.asyncio as aioredis
 from fastapi_limiter import FastAPILimiter
 from app.core.config import settings
 from app.api.analytics import router as analytics_router
@@ -13,21 +13,20 @@ from app.api.users import router as users_router
 from app.core.database import engine, Base
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
+from app.api import users
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    redis_instance = redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
-    await FastAPILimiter.init(redis_instance)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
+    redis_client = aioredis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
+    await FastAPILimiter.init(redis_client)
     yield
 
-    await redis_instance.close()
-    await engine.dispose()
+    await redis_client.close()
 
+app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 
+app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["Users"])
 
 app = FastAPI(
     title=settings.APP_NAME,
