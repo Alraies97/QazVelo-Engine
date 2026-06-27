@@ -13,7 +13,6 @@ from app.api.users import router as users_router
 from app.core.database import engine, Base
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
-from app.api import users
 from aiokafka import AIOKafkaProducer
 import json
 
@@ -39,10 +38,6 @@ async def lifespan(app: FastAPI):
     await redis_client.close()
     print("🛑 [QazVelo-Engine] Services stopped cleanly.")
 
-app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
-
-app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["Users"])
-
 app = FastAPI(
     title=settings.APP_NAME,
     description=" High-Performance Real-Time Market Analytics Engine | QazVelo-Engine",
@@ -53,10 +48,10 @@ app = FastAPI(
 )
 
 
-app.include_router(analytics_router)
-app.include_router(ws_router)
-app.include_router(auth_router)
-app.include_router(users_router)
+app.include_router(analytics_router, prefix=settings.API_V1_STR)
+app.include_router(ws_router, prefix=settings.API_V1_STR)
+app.include_router(auth_router, prefix=settings.API_V1_STR)
+app.include_router(users_router, prefix=settings.API_V1_STR)
 
 app.add_middleware(
     TrustedHostMiddleware,

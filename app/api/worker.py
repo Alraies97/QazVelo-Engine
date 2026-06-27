@@ -16,7 +16,7 @@ async def process_message(msg_body: str):
 
     try:
         data = json.loads(msg_body)        
-        
+    
         validated_data = AnalyticsCreate(**data)
         logger.info(f"📥 Received and validated metric: {validated_data.metric_name}")
 
@@ -24,6 +24,7 @@ async def process_message(msg_body: str):
             db_obj = AnalyticsModel(
                 metric_name=validated_data.metric_name,
                 metric_value=validated_data.metric_value,
+                user_id=validated_data.user_id,
                 extra_payload=validated_data.extra_payload
             )
             session.add(db_obj)
