@@ -12,9 +12,13 @@ from app.models.analytics import AnalyticsModel
 from app.schemas.analytics import AnalyticsResponse, PaginatedAnalyticsResponse
 from app.services.analytics import MarketAnalyticsService
 from app.services.market_data import MarketDataService
+from typing import Dict, Any
+from app.core.database import AsyncSessionLocal
 
 
 router = APIRouter(prefix="/analytics", tags=["Core Analytics"])
+
+
 
 
 class MarketTickerRequest(BaseModel):
@@ -32,9 +36,31 @@ class MarketTickerRequest(BaseModel):
         }
     }
 
+@router.get("/live-calculate", response_model=Dict[str, Any])
+async def get_market_calculations(
+    metric_name: str = Query(..., description="e.g"),
+    period: int = Query(5, description="e.g"),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        result = await MarketAnalyticsService.get_live_market_analytics(
+            db=db, 
+            metric_name=metric_name, 
+            period=period
+        )
+        
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("message"))
+            
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
+
 
 @router.post(
-    "/calculate",
+    "/ticker-calculate",
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(RateLimiter(times=10, seconds=60))],
 )

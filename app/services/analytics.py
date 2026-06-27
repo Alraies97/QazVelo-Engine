@@ -1,6 +1,9 @@
 from typing import Dict, List, Any
 import qazvelo_analytics
-
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import query
+from app.models.analytics import AnalyticsModel
+from sqlalchemy.future import select
 class MarketAnalyticsService:
     @staticmethod
     def process_market_indicators(prices: List[float], period: int) -> Dict[str, Any]:
@@ -24,4 +27,16 @@ class MarketAnalyticsService:
                 }
         }
               
+    @staticmethod
+    async def get_live_market_analytics(db: AsyncSession, metric_name: str, period: int)-> Dict[str,any]:
           
+        query=(
+            select(AnalyticsModel.metric_value)
+            .where(AnalyticsModel.metric_name == metric_name)
+            .order_by(AnalyticsModel.id.asc())
+           )
+    
+        result = await db.execute(query)
+        prices = [float(row[0]) for row in result.all()]
+
+        return MarketAnalyticsService.process_market_indicators(prices, period)
