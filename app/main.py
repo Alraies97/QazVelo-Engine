@@ -23,9 +23,16 @@ kafka_producer: AIOKafkaProducer = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Create all database tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print("🗄️ [QazVelo-Engine] Database tables created successfully!")
+
+    # Initialize Redis for rate limiting
     redis_client = aioredis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
     await FastAPILimiter.init(redis_client)
 
+    # Start Kafka producer
     producer = AIOKafkaProducer(
         bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
         value_serializer=lambda v: json.dumps(v).encode('utf-8') 
