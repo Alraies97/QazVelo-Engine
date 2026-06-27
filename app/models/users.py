@@ -14,3 +14,4 @@ class UserModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     analytics = relationship("AnalyticsModel", back_populates="user", cascade="all, delete-orphan")
+    wallet = relationship("MockWallet", back_populates="user", uselist=False, cascade="all, delete-orphan")

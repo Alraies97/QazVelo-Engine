@@ -13,6 +13,7 @@ from app.api.users import router as users_router
 from app.core.database import engine, Base
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
+from app.models.wallet import MockWallet, MockPosition, MockOrder
 from aiokafka import AIOKafkaProducer
 import json
 
