@@ -53,7 +53,9 @@ async def get_market_calculations(
             raise HTTPException(status_code=400, detail=result.get("message"))
             
         return result
-        
+
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 

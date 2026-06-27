@@ -10,7 +10,7 @@ class AnalyticsCreate(BaseModel):
 
 
 class AnalyticsResponse(BaseModel):
-    id: int
+    id: Optional[int] = None
     user_id: int
     metric_name: str
     metric_value: float
