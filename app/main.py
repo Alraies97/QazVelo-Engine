@@ -10,6 +10,7 @@ from app.api.analytics import router as analytics_router
 from app.api.ws_analytics import router as ws_router
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
+from app.api.wallet import router as wallet_router
 from app.core.database import engine, Base
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
@@ -53,6 +54,7 @@ app.include_router(analytics_router, prefix=settings.API_V1_STR)
 app.include_router(ws_router, prefix=settings.API_V1_STR)
 app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(users_router, prefix=settings.API_V1_STR)
+app.include_router(wallet_router, prefix=settings.API_V1_STR)
 
 app.add_middleware(
     TrustedHostMiddleware,
