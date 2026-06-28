@@ -102,3 +102,38 @@ export interface MockOrderCreate {
   price?: number;
   quantity: number;
 }
+
+export interface AnalyticsMetrics {
+  input_count: number;
+  applied_period: number;
+  simple_moving_average: number[];
+  volatility_standard_deviation: number[];
+}
+
+export interface TickerCalculateResponse {
+  status: string;
+  metrics: AnalyticsMetrics;
+  record_id?: number;
+  persisted_by?: string;
+}
+
+export interface AnalyticsRecord {
+  id: number | null;
+  user_id: number | null;
+  metric_name: string;
+  metric_value: number;
+  extra_payload: Record<string, unknown> | null;
+  timestamp: string;
+}
+
+export interface PaginatedAnalyticsResponse {
+  total: number;
+  page: number;
+  page_size: number;
+  results: AnalyticsRecord[];
+}
+
+export interface ChangePasswordRequest {
+  old_password: string;
+  new_password: string;
+}
