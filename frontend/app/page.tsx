@@ -1,7 +1,26 @@
+"use client";
+
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
+import api from "@/lib/api";
+import { useState } from "react";
 
 export default function Home() {
+  const [backendStatus, setBackendStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const checkBackend = async () => {
+    setLoading(true);
+    try {
+      const response = await api.get("/");
+      setBackendStatus(JSON.stringify(response.data, null, 2));
+    } catch (err) {
+      setBackendStatus(`Error: ${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -12,10 +31,18 @@ export default function Home() {
               QazVelo Engine Dashboard
             </h1>
             <p className="text-muted-foreground mb-8">Trading and Analytics Platform</p>
-            <div className="flex justify-center gap-4">
-              <Button>Get Started</Button>
+            <div className="flex justify-center gap-4 mb-8">
+              <Button onClick={checkBackend} disabled={loading}>
+                {loading ? "Checking..." : "Check Backend Connection"}
+              </Button>
               <Button variant="secondary">Learn More</Button>
             </div>
+            {backendStatus && (
+              <div className="mt-8 p-4 bg-card rounded-lg text-left">
+                <h3 className="font-semibold mb-2">Backend Status:</h3>
+                <pre className="text-sm text-muted-foreground overflow-x-auto">{backendStatus}</pre>
+              </div>
+            )}
           </div>
         </div>
       </main>
