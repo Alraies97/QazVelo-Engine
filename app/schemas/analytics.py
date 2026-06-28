@@ -21,6 +21,24 @@ class AnalyticsResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AnalyticsMetrics(BaseModel):
+    input_count: int
+    applied_period: int
+    simple_moving_average: List[float]
+    volatility_standard_deviation: List[float]
+
+
+class TickerCalculateResponse(BaseModel):
+    status: str
+    metrics: AnalyticsMetrics
+    source: str
+    computed_at: datetime
+    record_id: Optional[int] = None
+    persisted_by: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class PaginatedAnalyticsResponse(BaseModel):
     total: int
     page: int

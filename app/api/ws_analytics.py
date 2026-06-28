@@ -6,9 +6,6 @@ from app.models.analytics import AnalyticsModel
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
 import json
-import app.main as main_module
-
-
 router = APIRouter(prefix="/ws", tags=["WebSockets"])
 
 
@@ -61,7 +58,7 @@ async def websocket_analytics_endpoint(
                         "extra_payload": validated.extra_payload
                     }
 
-                    producer = getattr(main_module, "kafka_producer", None)
+                    producer = getattr(websocket.app.state, "kafka_producer", None)
 
                     if producer:
                         await producer.send_and_wait("market_analytics", payload)

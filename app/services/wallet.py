@@ -1,3 +1,4 @@
+from decimal import Decimal, ROUND_HALF_UP, getcontext
 from typing import Dict, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -13,6 +14,8 @@ from app.models.wallet import (
     OrderStatus
 )
 from app.schemas.wallet import MockOrderCreate
+
+getcontext().prec = 28
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("QazVelo-Wallet-Service")
@@ -97,32 +100,37 @@ class WalletService:
             None
         )
 
+        # Convert incoming numeric values to Decimal for precise accounting
+        price = Decimal(str(order_data.price)) if order_data.price is not None else None
+        quantity = Decimal(str(order_data.quantity))
+        wallet_balance = Decimal(str(wallet.balance))
+        existing_quantity = Decimal(str(existing_position.quantity)) if existing_position else Decimal("0")
+
         # Risk Management Checks
         if order_data.side == OrderSide.BUY:
-            if order_data.order_type == OrderType.MARKET and not order_data.price:
+            if order_data.order_type == OrderType.MARKET and price is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Market orders require current price for calculation"
                 )
-            if order_data.order_type == OrderType.LIMIT and not order_data.price:
+            if order_data.order_type == OrderType.LIMIT and price is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Limit orders require a price"
                 )
 
-            total_cost = order_data.price * order_data.quantity
-            if wallet.balance < total_cost:
+            total_cost = price * quantity
+            if wallet_balance < total_cost:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Insufficient balance: need ${total_cost:.2f}, have ${wallet.balance:.2f}"
+                    detail=f"Insufficient balance: need ${total_cost:.2f}, have ${wallet_balance:.2f}"
                 )
 
         elif order_data.side == OrderSide.SELL:
-            if not existing_position or existing_position.quantity < order_data.quantity:
-                available = existing_position.quantity if existing_position else 0.0
+            if existing_quantity < quantity:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Insufficient position quantity: need {order_data.quantity} {order_data.asset_symbol}, have {available}"
+                    detail=f"Insufficient position quantity: need {quantity} {order_data.asset_symbol}, have {existing_quantity}"
                 )
 
         # Create order
@@ -131,51 +139,60 @@ class WalletService:
             asset_symbol=order_data.asset_symbol,
             order_type=order_data.order_type,
             side=order_data.side,
-            price=order_data.price,
-            quantity=order_data.quantity,
+            price=price,
+            quantity=quantity,
             status=OrderStatus.PENDING
         )
-        db.add(new_order)
 
-        # Execute Market Orders immediately
-        if order_data.order_type == OrderType.MARKET:
-            new_order.status = OrderStatus.EXECUTED
+        new_order = MockOrder(
+            wallet_id=wallet.id,
+            asset_symbol=order_data.asset_symbol,
+            order_type=order_data.order_type,
+            side=order_data.side,
+            price=price,
+            quantity=quantity,
+            status=OrderStatus.PENDING
+        )
 
-            if order_data.side == OrderSide.BUY:
-                # Update balance
-                total_cost = order_data.price * order_data.quantity
-                wallet.balance -= total_cost
+        async with db.begin():
+            db.add(new_order)
 
-                # Update position
-                if existing_position:
-                    # Calculate new average entry price
-                    total_quantity = existing_position.quantity + order_data.quantity
-                    total_value = (existing_position.quantity * existing_position.average_entry_price) + total_cost
-                    existing_position.average_entry_price = total_value / total_quantity
-                    existing_position.quantity = total_quantity
-                else:
-                    # Create new position
-                    new_position = MockPosition(
-                        wallet_id=wallet.id,
-                        asset_symbol=order_data.asset_symbol,
-                        quantity=order_data.quantity,
-                        average_entry_price=order_data.price
+            # Execute Market Orders immediately
+            if order_data.order_type == OrderType.MARKET:
+                new_order.status = OrderStatus.EXECUTED
+
+                if order_data.side == OrderSide.BUY:
+                    total_cost = (price * quantity).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
+                    wallet.balance = float((wallet_balance - total_cost).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP))
+
+                    if existing_position:
+                        existing_qty = Decimal(str(existing_position.quantity))
+                        total_quantity = existing_qty + quantity
+                        total_value = (existing_qty * Decimal(str(existing_position.average_entry_price))) + total_cost
+                        existing_position.average_entry_price = float((total_value / total_quantity).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP))
+                        existing_position.quantity = float(total_quantity)
+                    else:
+                        new_position = MockPosition(
+                            wallet_id=wallet.id,
+                            asset_symbol=order_data.asset_symbol,
+                            quantity=float(quantity),
+                            average_entry_price=float(price)
+                        )
+                        db.add(new_position)
+
+                elif order_data.side == OrderSide.SELL:
+                    total_revenue = (price * quantity).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
+                    wallet.balance = float((wallet_balance + total_revenue).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP))
+
+                    if existing_position and Decimal(str(existing_position.quantity)) == quantity:
+                        await db.delete(existing_position)
+                    elif existing_position:
+                        remaining_qty = Decimal(str(existing_position.quantity)) - quantity
+                        existing_position.quantity = float(remaining_qty)
+
+                    logger.info(
+                        f"✅ Executed MARKET {order_data.side.value} order for {quantity} {order_data.asset_symbol} @ ${price}"
                     )
-                    db.add(new_position)
 
-            elif order_data.side == OrderSide.SELL:
-                # Update balance
-                total_revenue = order_data.price * order_data.quantity
-                wallet.balance += total_revenue
-
-                # Update/remove position
-                if existing_position.quantity == order_data.quantity:
-                    await db.delete(existing_position)
-                else:
-                    existing_position.quantity -= order_data.quantity
-
-            logger.info(f"✅ Executed MARKET {order_data.side.value} order for {order_data.quantity} {order_data.asset_symbol} @ ${order_data.price}")
-
-        await db.commit()
         await db.refresh(new_order)
         return new_order

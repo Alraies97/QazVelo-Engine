@@ -14,7 +14,7 @@ from app.api.users import get_current_user
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
 from app.models.wallet import MockOrder, OrderStatus, OrderType, OrderSide, MockWallet
-from app.schemas.analytics import AnalyticsResponse, PaginatedAnalyticsResponse
+from app.schemas.analytics import AnalyticsResponse, PaginatedAnalyticsResponse, TickerCalculateResponse
 from app.schemas.wallet import MockOrderResponse
 from app.services.analytics import MarketAnalyticsService
 from app.services.market_data import MarketDataService
@@ -40,7 +40,7 @@ class MarketTickerRequest(BaseModel):
         }
     }
 
-@router.get("/live-calculate", response_model=Dict[str, Any])
+@router.get("/live-calculate", response_model=TickerCalculateResponse)
 async def get_market_calculations(
     metric_name: str = Query(..., description="e.g"),
     period: int = Query(5, description="e.g"),
@@ -48,15 +48,20 @@ async def get_market_calculations(
 ):
     try:
         result = await MarketAnalyticsService.get_live_market_analytics(
-            db=db, 
-            metric_name=metric_name, 
+            db=db,
+            metric_name=metric_name,
             period=period
         )
-        
+
         if result.get("status") == "error":
             raise HTTPException(status_code=400, detail=result.get("message"))
-            
-        return result
+
+        return TickerCalculateResponse(
+            status=result["status"],
+            metrics=result["metrics"],
+            source="live_market_analytics",
+            computed_at=datetime.utcnow(),
+        )
 
     except HTTPException as he:
         raise he
@@ -67,6 +72,7 @@ async def get_market_calculations(
 
 @router.post(
     "/ticker-calculate",
+    response_model=TickerCalculateResponse,
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(RateLimiter(times=10, seconds=60))],
 )
@@ -76,7 +82,7 @@ async def calculate_market_metrics(
     current_user: UserModel = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    prices = MarketDataService.get_historical_price(
+    prices = await MarketDataService.get_historical_price(
         ticker=payload.ticker,
         period=payload.period,
     )
@@ -87,7 +93,7 @@ async def calculate_market_metrics(
             detail=f"Could not fetch historical data for ticker '{payload.ticker}'. Please check the symbol.",
         )
 
-    result = MarketAnalyticsService.process_market_indicators(
+    result = await MarketAnalyticsService.process_market_indicators(
         prices=prices,
         period=payload.calculation_window,
     )
@@ -117,11 +123,14 @@ async def calculate_market_metrics(
     await db.commit()
     await db.refresh(db_record)
 
-    return {
-        **result,
-        "record_id": db_record.id,
-        "persisted_by": current_user.username,
-    }
+    return TickerCalculateResponse(
+        status=result["status"],
+        metrics=result["metrics"],
+        source="historical_market_data",
+        computed_at=datetime.utcnow(),
+        record_id=db_record.id,
+        persisted_by=current_user.username,
+    )
 
 
 @router.get(

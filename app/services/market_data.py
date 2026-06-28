@@ -1,10 +1,11 @@
+import asyncio
 import yfinance as yf
 from typing import List, Optional
 
+
 class MarketDataService:
     @staticmethod
-    def get_historical_price(ticker: str, period: str = '1mo') -> Optional[float]:
-
+    def _fetch_historical_price(ticker: str, period: str = '1mo') -> Optional[List[float]]:
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period=period)
@@ -13,11 +14,13 @@ class MarketDataService:
                 return None
 
             close_prices: List[float] = hist['Close'].dropna().tolist()
-
             return close_prices
-
         except Exception as e:
             print(f"Error fetching historical price for {ticker}: {e}")
             return None
+
+    @staticmethod
+    async def get_historical_price(ticker: str, period: str = '1mo') -> Optional[List[float]]:
+        return await asyncio.to_thread(MarketDataService._fetch_historical_price, ticker, period)
 
         

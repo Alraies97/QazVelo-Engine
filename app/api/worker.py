@@ -186,11 +186,15 @@ async def process_message(session, producer, msg_body: str):
         await session.commit()
 
     except json.JSONDecodeError:
+        await session.rollback()
         logger.error("❌ Failed to decode message body to JSON.")
     except ValidationError as e:
+        await session.rollback()
         logger.error(f"❌ Data validation failed: {e.errors()}")
     except Exception as e:
-        logger.error(f"❌ Unexpected error during processing: {e}")
+        await session.rollback()
+        logger.exception(f"❌ Unexpected error during processing: {e}")
+        raise
 
 
 async def start_worker():
@@ -213,10 +217,13 @@ async def start_worker():
     logger.info("🚀 QazVelo-Worker is up!")
 
     try:
-        async with AsyncSessionLocal() as session:
-            async for msg in consumer:
-                message_body = msg.value.decode("utf-8")
-                await process_message(session, producer, message_body)
+        async for msg in consumer:
+            message_body = msg.value.decode("utf-8")
+            async with AsyncSessionLocal() as session:
+                try:
+                    await process_message(session, producer, message_body)
+                except Exception:
+                    logger.warning("⚠️ Message processing failed; continuing with next Kafka event.")
     finally:
         await consumer.stop()
         await producer.stop()
