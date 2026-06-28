@@ -3,25 +3,67 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import api from "@/lib/api";
+import {
+  OrderSide,
+  OrderType,
+  type MockOrder,
+  type WalletSummary,
+} from "@/lib/types";
 
-type OrderType = "market" | "limit";
-type OrderSide = "buy" | "sell";
+type UiOrderType = "market" | "limit";
+type UiOrderSide = "buy" | "sell";
 
 export function BuySellCard() {
-  const [side, setSide] = React.useState<OrderSide>("buy");
-  const [orderType, setOrderType] = React.useState<OrderType>("market");
+  const [side, setSide] = React.useState<UiOrderSide>("buy");
+  const [orderType, setOrderType] = React.useState<UiOrderType>("market");
   const [asset, setAsset] = React.useState("BTC");
   const [quantity, setQuantity] = React.useState("");
   const [price, setPrice] = React.useState("65500");
   const [loading, setLoading] = React.useState(false);
+  const [feedback, setFeedback] = React.useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   const handleSubmit = async () => {
     setLoading(true);
+    setFeedback(null);
     try {
-      // TODO: Call backend /api/v1/wallet/orders endpoint
-      console.log({ side, orderType, asset, quantity, price });
+      // The order schema requires the wallet id, so resolve it first.
+      const { data: summary } = await api.get<WalletSummary>("/wallet");
+
+      const payload = {
+        wallet_id: summary.wallet.id,
+        asset_symbol: asset,
+        order_type: orderType === "market" ? OrderType.MARKET : OrderType.LIMIT,
+        side: side === "buy" ? OrderSide.BUY : OrderSide.SELL,
+        price: Number(price),
+        quantity: Number(quantity),
+      };
+
+      const { data: order } = await api.post<MockOrder>(
+        "/wallet/orders",
+        payload
+      );
+
+      setFeedback({
+        type: "success",
+        message: `Order #${order.id} ${order.status.toLowerCase()}: ${order.side} ${order.quantity} ${order.asset_symbol}`,
+      });
     } catch (err) {
-      console.error(err);
+      const status = (err as { response?: { status?: number } }).response
+        ?.status;
+      const detail = (
+        err as { response?: { data?: { detail?: string } } }
+      ).response?.data?.detail;
+      let message = detail ?? "Failed to place order. Please try again.";
+      if (status === 401) {
+        message = "Authentication required. Please sign in to trade.";
+      } else if (status === 404) {
+        message = "No wallet found. Create a mock wallet first.";
+      }
+      setFeedback({ type: "error", message });
     } finally {
       setLoading(false);
     }
@@ -134,6 +176,19 @@ export function BuySellCard() {
           <span className="font-bold text-foreground">${total.toFixed(2)}</span>
         </div>
 
+        {feedback && (
+          <div
+            className={cn(
+              "text-sm rounded-lg px-3 py-2",
+              feedback.type === "success"
+                ? "bg-green-600/10 text-green-500"
+                : "bg-red-600/10 text-red-500"
+            )}
+          >
+            {feedback.message}
+          </div>
+        )}
+
         {/* Submit Button */}
         <Button
           className={cn(
@@ -141,7 +196,7 @@ export function BuySellCard() {
             side === "buy" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"
           )}
           onClick={handleSubmit}
-          disabled={loading}
+          disabled={loading || !quantity}
         >
           {loading ? "Processing..." : `${side === "buy" ? "Buy" : "Sell"} ${asset}`}
         </Button>

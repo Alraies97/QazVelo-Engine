@@ -61,7 +61,6 @@ async def websocket_analytics_endpoint(
                         "extra_payload": validated.extra_payload
                     }
 
-                    import app.main as main_moudle
                     producer = getattr(main_module, "kafka_producer", None)
 
                     if producer:
