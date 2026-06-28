@@ -5,15 +5,15 @@ from app.core.database import Base
 from typing import Optional
 import enum
 
-class OrderType(enum.Enum):
+class OrderType(str, enum.Enum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"
 
-class OrderSide(enum.Enum):
+class OrderSide(str, enum.Enum):
     BUY = "BUY"
     SELL = "SELL"
 
-class OrderStatus(enum.Enum):
+class OrderStatus(str, enum.Enum):
     PENDING = "PENDING"
     EXECUTED = "EXECUTED"
     CANCELED = "CANCELED"

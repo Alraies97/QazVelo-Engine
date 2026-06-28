@@ -1,20 +1,10 @@
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
-import enum
 
-class OrderType(str, enum.Enum):
-    MARKET = "MARKET"
-    LIMIT = "LIMIT"
-
-class OrderSide(str, enum.Enum):
-    BUY = "BUY"
-    SELL = "SELL"
-
-class OrderStatus(str, enum.Enum):
-    PENDING = "PENDING"
-    EXECUTED = "EXECUTED"
-    CANCELED = "CANCELED"
+# Reuse the model-layer enums as the single source of truth so that values
+# parsed from requests compare equal to the enums used in the service/worker.
+from app.models.wallet import OrderType, OrderSide, OrderStatus
 
 # MockWallet Schemas
 class MockWalletBase(BaseModel):
