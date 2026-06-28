@@ -93,11 +93,16 @@ export function AuthScreen() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-muted-foreground mb-2">
+          <div key="username-field">
+            <label
+              htmlFor="auth-username"
+              className="block text-sm font-medium text-muted-foreground mb-2"
+            >
               Username
             </label>
             <input
+              id="auth-username"
+              name="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -109,11 +114,16 @@ export function AuthScreen() {
           </div>
 
           {mode === "register" && (
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-2">
+            <div key="email-field">
+              <label
+                htmlFor="auth-email"
+                className="block text-sm font-medium text-muted-foreground mb-2"
+              >
                 Email
               </label>
               <input
+                id="auth-email"
+                name="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -124,11 +134,16 @@ export function AuthScreen() {
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-muted-foreground mb-2">
+          <div key="password-field">
+            <label
+              htmlFor="auth-password"
+              className="block text-sm font-medium text-muted-foreground mb-2"
+            >
               Password
             </label>
             <input
+              id="auth-password"
+              name="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
