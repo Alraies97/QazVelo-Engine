@@ -10,7 +10,6 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { cn } from "@/lib/utils";
 
 // Mock data for BTC/USD price chart
 const mockMarketData = [
@@ -40,25 +39,33 @@ export function MarketOverview() {
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={mockMarketData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis dataKey="time" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12 }} />
-          <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12 }} tickFormatter={(v) => `$${v}` />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: "hsl(var(--card))",
-              borderColor: "hsl(var(--border))",
-              borderRadius: "0.5rem",
-              color: "hsl(var(--foreground))"
-            }}
-          />
-          <Line
-            type="monotone"
-            dataKey="price"
-            stroke="hsl(var(--primary))"
-            strokeWidth={3}
-            dot={{ r: 4, fill: "hsl(var(--primary))" }}
-            activeDot={{ r: 6 }}
-          />
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <XAxis
+              dataKey="time"
+              stroke="hsl(var(--muted-foreground))"
+              tick={{ fontSize: 12 }}
+            />
+            <YAxis
+              stroke="hsl(var(--muted-foreground))"
+              tick={{ fontSize: 12 }}
+              tickFormatter={(value) => `$${value}`}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "hsl(var(--card))",
+                borderColor: "hsl(var(--border))",
+                borderRadius: "0.5rem",
+                color: "hsl(var(--foreground))",
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="price"
+              stroke="hsl(var(--primary))"
+              strokeWidth={3}
+              dot={{ r: 4, fill: "hsl(var(--primary))" }}
+              activeDot={{ r: 6 }}
+            />
           </LineChart>
         </ResponsiveContainer>
       </div>
