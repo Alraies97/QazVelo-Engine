@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
-from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from io import StringIO
 import csv
@@ -180,28 +179,36 @@ async def get_orders_history(
     order_type_filter: Optional[OrderType] = Query(None, description="Filter orders by type (MARKET, LIMIT)"),
     asset_filter: Optional[str] = Query(None, description="Filter orders by asset symbol (e.g., BTC, AAPL)"),
 ):
-    # First get user's wallet
-    wallet_result = await db.execute(
-        select(MockWallet).where(MockWallet.user_id == current_user.id)
-    )
-    wallet = wallet_result.scalar_one_or_none()
-    if not wallet:
-        return []
+    try:
+        # First get user's wallet
+        wallet_result = await db.execute(
+            select(MockWallet).where(MockWallet.user_id == current_user.id)
+        )
+        wallet = wallet_result.scalar_one_or_none()
+        if not wallet:
+            return []
 
-    query = select(MockOrder).where(MockOrder.wallet_id == wallet.id)
+        query = select(MockOrder).where(MockOrder.wallet_id == wallet.id)
 
-    if status_filter:
-        query = query.where(MockOrder.status == status_filter)
-    if order_type_filter:
-        query = query.where(MockOrder.order_type == order_type_filter)
-    if asset_filter:
-        query = query.where(MockOrder.asset_symbol.ilike(f"%{asset_filter}%"))
+        if status_filter:
+            query = query.where(MockOrder.status == status_filter)
+        if order_type_filter:
+            query = query.where(MockOrder.order_type == order_type_filter)
+        if asset_filter:
+            query = query.where(MockOrder.asset_symbol.ilike(f"%{asset_filter}%"))
 
-    # Apply ordering
-    query = query.order_by(MockOrder.created_at.desc())
+        # Apply ordering
+        query = query.order_by(MockOrder.created_at.desc())
 
-    rows_result = await db.execute(query)
-    return rows_result.scalars().all()
+        rows_result = await db.execute(query)
+        return rows_result.scalars().all()
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve orders: {str(e)}"
+        )
 
 
 @router.get(
@@ -214,62 +221,72 @@ async def export_analytics_data(
     current_user: UserModel = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Get user's orders and analytics
-    wallet_result = await db.execute(
-        select(MockWallet).where(MockWallet.user_id == current_user.id)
-    )
-    wallet = wallet_result.scalar_one_or_none()
+    try:
+        # Get user's orders and analytics
+        wallet_result = await db.execute(
+            select(MockWallet).where(MockWallet.user_id == current_user.id)
+        )
+        wallet = wallet_result.scalar_one_or_none()
 
-    # Get orders
-    orders_query = select(MockOrder).where(MockOrder.wallet_id == wallet.id) if wallet else select(MockOrder).where(False)
-    orders_result = await db.execute(orders_query.order_by(MockOrder.created_at.desc()))
-    orders = orders_result.scalars().all()
+        # Get orders
+        orders_query = select(MockOrder).where(MockOrder.wallet_id == wallet.id) if wallet else select(MockOrder).where(False)
+        orders_result = await db.execute(orders_query.order_by(MockOrder.created_at.desc()))
+        orders = orders_result.scalars().all()
 
-    # Get analytics
-    analytics_result = await db.execute(
-        select(AnalyticsModel).where(AnalyticsModel.user_id == current_user.id).order_by(AnalyticsModel.timestamp.desc()))
-    analytics = analytics_result.scalars().all()
+        # Get analytics
+        analytics_result = await db.execute(
+            select(AnalyticsModel).where(AnalyticsModel.user_id == current_user.id).order_by(AnalyticsModel.timestamp.desc()))
+        analytics = analytics_result.scalars().all()
 
-    # Generate CSV
-    output = StringIO()
-    writer = csv.writer(output)
+        # Generate CSV
+        output = StringIO()
+        writer = csv.writer(output)
 
-    # Write header for orders
-    writer.writerow([
-        "Order ID", "Asset Symbol", "Type", "Side", "Price",
-        "Quantity", "Status", "Created At (UTC)"
-    ])
-
-    for order in orders:
+        # Write header for orders
         writer.writerow([
-            order.id,
-            order.asset_symbol,
-            order.order_type.value,
-            order.side.value,
-            order.price,
-            order.quantity,
-            order.status.value,
-            order.created_at.isoformat(),
+            "Order ID", "Asset Symbol", "Type", "Side", "Price",
+            "Quantity", "Status", "Created At (UTC)"
         ])
 
-    writer.writerow([])  # Empty row
-    writer.writerow([
-        "Analytics ID", "Metric Name", "Metric Value", "Timestamp", "Extra Payload"
-    ])
-    for record in analytics:
+        for order in orders:
+            writer.writerow([
+                order.id,
+                order.asset_symbol,
+                order.order_type.value,
+                order.side.value,
+                order.price,
+                order.quantity,
+                order.status.value,
+                order.created_at.isoformat(),
+            ])
+
+        writer.writerow([])  # Empty row
         writer.writerow([
-            record.id,
-            record.metric_name,
-            record.metric_value,
-            record.timestamp.isoformat(),
-            str(record.extra_payload),
+            "Analytics ID", "Metric Name", "Metric Value", "Timestamp", "Extra Payload"
         ])
+        for record in analytics:
+            writer.writerow([
+                record.id,
+                record.metric_name,
+                record.metric_value,
+                record.timestamp.isoformat(),
+                str(record.extra_payload),
+            ])
 
-    output.seek(0)
-    filename = f"qazvelo-analytics-export-{datetime.utcnow().isoformat()}.csv"
+        output.seek(0)
+        # Sanitize filename (no colons in ISO format for Windows compatibility)
+        safe_filename = datetime.utcnow().strftime("%Y-%m-%dT%H-%M-%SZ")
+        filename = f"qazvelo-analytics-export-{safe_filename}.csv"
 
-    return StreamingResponse(
-        output,
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
+        return StreamingResponse(
+            output,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export data: {str(e)}"
+        )

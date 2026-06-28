@@ -9,289 +9,129 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Legend,
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
-import { formatNumber, formatDateTime } from "@/lib/format";
-import type {
-  PaginatedAnalyticsResponse,
-  TickerCalculateResponse,
-} from "@/lib/types";
 
-const PERIODS = ["1mo", "3mo", "6mo", "1y"];
+// Mock price/SMA data for chart (will fetch from backend later)
+const mockChartData = [
+  { time: "09:00", price: 64250, sma: 64100 },
+  { time: "10:00", price: 64500, sma: 64200 },
+  { time: "11:00", price: 64300, sma: 64350 },
+  { time: "12:00", price: 65000, sma: 64600 },
+  { time: "13:00", price: 64800, sma: 64750 },
+  { time: "14:00", price: 65200, sma: 64950 },
+  { time: "15:00", price: 65500, sma: 65150 },
+];
 
-interface ChartPoint {
-  time: string;
-  sma: number;
-  volatility: number | null;
+// Mock order data (will fetch from backend endpoint /analytics/orders-history later)
+interface MockOrder {
+  id: number;
+  asset_symbol: string;
+  order_type: "MARKET" | "LIMIT";
+  side: "BUY" | "SELL";
+  price: number | null;
+  quantity: number;
+  status: "PENDING" | "EXECUTED" | "CANCELED";
+  created_at: string;
 }
+
+const mockOrders: MockOrder[] = [
+  {
+    id: 1,
+    asset_symbol: "BTC",
+    order_type: "MARKET",
+    side: "BUY",
+    price: 65500,
+    quantity: 0.1,
+    status: "EXECUTED",
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 2,
+    asset_symbol: "ETH",
+    order_type: "LIMIT",
+    side: "SELL",
+    price: 3200,
+    quantity: 2,
+    status: "PENDING",
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+  },
+];
 
 export function AnalyticsView() {
-  const [ticker, setTicker] = React.useState("BTC-USD");
-  const [period, setPeriod] = React.useState("1mo");
-  const [window, setWindow] = React.useState(3);
-
-  const [points, setPoints] = React.useState<ChartPoint[]>([]);
-  const [running, setRunning] = React.useState(false);
-  const [calcError, setCalcError] = React.useState<string | null>(null);
-  const [meta, setMeta] = React.useState<{
-    inputCount: number;
-    appliedPeriod: number;
-  } | null>(null);
-
-  const [history, setHistory] =
-    React.useState<PaginatedAnalyticsResponse | null>(null);
-  const [historyError, setHistoryError] = React.useState<string | null>(null);
-
-  const loadHistory = React.useCallback(async () => {
-    setHistoryError(null);
-    try {
-      const { data } = await api.get<PaginatedAnalyticsResponse>(
-        "/analytics/history",
-        { params: { page: 1, page_size: 10 } }
-      );
-      setHistory(data);
-    } catch {
-      setHistoryError("Unable to load analytics history.");
-    }
-  }, []);
-
-  const runCalculation = React.useCallback(async () => {
-    setRunning(true);
-    setCalcError(null);
-    try {
-      const { data } = await api.post<TickerCalculateResponse>(
-        "/analytics/ticker-calculate",
-        { ticker, period, calculation_window: window }
-      );
-      const sma = data.metrics?.simple_moving_average ?? [];
-      const vol = data.metrics?.volatility_standard_deviation ?? [];
-      setPoints(
-        sma.map((value, index) => ({
-          time: `T${index + 1}`,
-          sma: value,
-          volatility: index < vol.length ? vol[index] : null,
-        }))
-      );
-      setMeta({
-        inputCount: data.metrics?.input_count ?? sma.length,
-        appliedPeriod: data.metrics?.applied_period ?? window,
-      });
-      await loadHistory();
-    } catch (err) {
-      const status = (err as { response?: { status?: number } }).response
-        ?.status;
-      const detail = (err as { response?: { data?: { detail?: string } } })
-        .response?.data?.detail;
-      if (status === 401) {
-        setCalcError("Authentication required. Please sign in.");
-      } else {
-        setCalcError(
-          detail ?? "Calculation failed. Check the ticker symbol and try again."
-        );
-      }
-    } finally {
-      setRunning(false);
-    }
-  }, [ticker, period, window, loadHistory]);
+  const [statusFilter, setStatusFilter] = React.useState<string>("ALL");
+  const [orders, setOrders] = React.useState<MockOrder[]>(mockOrders);
+  const [loading, setLoading] = React.useState(false);
 
   React.useEffect(() => {
-    runCalculation();
-    // Run once on mount with the default ticker.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Uncomment to fetch real data from backend when auth is set up
+    // fetchOrders();
   }, []);
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Market Analytics</h1>
-        <p className="text-sm text-muted-foreground">
-          Simple moving average &amp; volatility computed by the C++ analytics
-          core.
-        </p>
-      </div>
+  const fetchOrders = async () => {
+    setLoading(true);
+    try {
+      const response = await api.get("/analytics/orders-history");
+      setOrders(response.data);
+    } catch (err) {
+      console.error("Failed to fetch orders", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      {/* Controls */}
-      <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
-          <div>
-            <label
-              htmlFor="ticker"
-              className="block text-sm font-medium text-muted-foreground mb-2"
-            >
-              Ticker
-            </label>
-            <input
-              id="ticker"
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value.toUpperCase())}
-              className="w-full px-4 py-3 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="period"
-              className="block text-sm font-medium text-muted-foreground mb-2"
-            >
-              Period
-            </label>
-            <select
-              id="period"
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              className="w-full px-4 py-3 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              {PERIODS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label
-              htmlFor="window"
-              className="block text-sm font-medium text-muted-foreground mb-2"
-            >
-              SMA Window
-            </label>
-            <input
-              id="window"
-              type="number"
-              min={1}
-              value={window}
-              onChange={(e) =>
-                setWindow(Math.max(1, Number(e.target.value) || 1))
-              }
-              className="w-full px-4 py-3 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-          <Button
-            onClick={runCalculation}
-            disabled={running || !ticker}
-            className="py-6 font-bold"
-          >
-            {running ? "Calculating..." : "Run Analysis"}
-          </Button>
+  const handleExport = async () => {
+    try {
+      const response = await api.get("/analytics/export", {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `qazvelo-export-${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Failed to export", err);
+    }
+  };
+
+  const filteredOrders =
+    statusFilter === "ALL"
+      ? orders
+      : orders.filter((order) => order.status === statusFilter);
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">
+            Financial Analyst Dashboard
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Audit execution system and perform data analysis
+          </p>
         </div>
-        {meta && !calcError && (
-          <p className="text-xs text-muted-foreground mt-4">
-            {meta.inputCount} price points · SMA window {meta.appliedPeriod}
-          </p>
-        )}
+        <Button onClick={handleExport} className="bg-primary">
+          Export Data to CSV
+        </Button>
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ChartCard
-          title="Simple Moving Average"
-          dataKey="sma"
-          color="hsl(var(--primary))"
-          points={points}
-          loading={running}
-          error={calcError}
-        />
-        <ChartCard
-          title="Volatility (Std. Dev.)"
-          dataKey="volatility"
-          color="#f59e0b"
-          points={points}
-          loading={running}
-          error={calcError}
-        />
-      </div>
-
-      {/* History */}
+      {/* Chart Section */}
       <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
-        <h2 className="text-lg font-bold text-foreground mb-4">
-          Calculation History
+        <h2 className="text-xl font-semibold text-foreground mb-6">
+          Live Price & SMA Indicator
         </h2>
-        {historyError ? (
-          <p className="text-sm text-muted-foreground">{historyError}</p>
-        ) : !history || history.results.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No saved calculations yet.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-muted-foreground border-b border-border">
-                  <th className="py-2 pr-4 font-medium">#</th>
-                  <th className="py-2 pr-4 font-medium">Metric</th>
-                  <th className="py-2 pr-4 font-medium">Value</th>
-                  <th className="py-2 pr-4 font-medium">When</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.results.map((row, index) => (
-                  <tr
-                    key={row.id ?? index}
-                    className="border-b border-border/50 last:border-0"
-                  >
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {row.id ?? "—"}
-                    </td>
-                    <td className="py-3 pr-4 font-medium text-foreground">
-                      {row.metric_name}
-                    </td>
-                    <td className="py-3 pr-4 text-foreground">
-                      {formatNumber(row.metric_value)}
-                    </td>
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {formatDateTime(row.timestamp)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="text-xs text-muted-foreground mt-3">
-              Showing {history.results.length} of {history.total} records.
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ChartCard({
-  title,
-  dataKey,
-  color,
-  points,
-  loading,
-  error,
-}: {
-  title: string;
-  dataKey: "sma" | "volatility";
-  color: string;
-  points: ChartPoint[];
-  loading: boolean;
-  error: string | null;
-}) {
-  return (
-    <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
-      <h3 className="text-sm font-semibold text-muted-foreground mb-4">
-        {title}
-      </h3>
-      <div className="h-64">
-        {loading ? (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            Loading...
-          </div>
-        ) : error ? (
-          <div className="h-full flex items-center justify-center text-center text-muted-foreground px-4">
-            {error}
-          </div>
-        ) : points.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            No data.
-          </div>
-        ) : (
+        <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={points}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <LineChart data={mockChartData}>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="hsl(var(--border))"
+              />
               <XAxis
                 dataKey="time"
                 stroke="hsl(var(--muted-foreground))"
@@ -300,7 +140,7 @@ function ChartCard({
               <YAxis
                 stroke="hsl(var(--muted-foreground))"
                 tick={{ fontSize: 12 }}
-                domain={["auto", "auto"]}
+                tickFormatter={(value) => `$${value}`}
               />
               <Tooltip
                 contentStyle={{
@@ -310,17 +150,123 @@ function ChartCard({
                   color: "hsl(var(--foreground))",
                 }}
               />
+              <Legend />
               <Line
                 type="monotone"
-                dataKey={dataKey}
-                stroke={color}
+                dataKey="price"
+                stroke="hsl(var(--primary))"
+                strokeWidth={3}
+                name="Price"
+              />
+              <Line
+                type="monotone"
+                dataKey="sma"
+                stroke="#10b981"
                 strokeWidth={2}
-                dot={false}
-                connectNulls
+                strokeDasharray="5 5"
+                name="SMA"
               />
             </LineChart>
           </ResponsiveContainer>
-        )}
+        </div>
+      </div>
+
+      {/* Audit Table Section */}
+      <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold text-foreground">
+            Order History Audit Table
+          </h2>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-muted-foreground">
+              Filter by Status:
+            </label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-4 py-2 bg-background border border-border rounded-lg text-foreground text-sm"
+            >
+              <option value="ALL">All</option>
+              <option value="PENDING">Pending</option>
+              <option value="EXECUTED">Executed</option>
+              <option value="CANCELED">Canceled</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-muted-foreground">
+            <thead className="bg-accent/50 text-foreground text-xs uppercase">
+              <tr>
+                <th className="px-6 py-3">Order ID</th>
+                <th className="px-6 py-3">Asset</th>
+                <th className="px-6 py-3">Type</th>
+                <th className="px-6 py-3">Side</th>
+                <th className="px-6 py-3">Price</th>
+                <th className="px-6 py-3">Quantity</th>
+                <th className="px-6 py-3">Status</th>
+                <th className="px-6 py-3">Created At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center">
+                    Loading orders...
+                  </td>
+                </tr>
+              ) : filteredOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center">
+                    No orders found matching your filters
+                  </td>
+                </tr>
+              ) : (
+                filteredOrders.map((order) => (
+                  <tr
+                    key={order.id}
+                    className="border-b border-border last:border-0"
+                  >
+                    <td className="px-6 py-4 font-mono">{order.id}</td>
+                    <td className="px-6 py-4 font-medium text-foreground">
+                      {order.asset_symbol}
+                    </td>
+                    <td className="px-6 py-4">{order.order_type}</td>
+                    <td
+                      className={`px-6 py-4 font-semibold ${
+                        order.side === "BUY"
+                          ? "text-green-500"
+                          : "text-red-500"
+                      }`}
+                    >
+                      {order.side}
+                    </td>
+                    <td className="px-6 py-4">
+                      ${order.price ? order.price.toFixed(2) : "-"}
+                    </td>
+                    <td className="px-6 py-4">{order.quantity.toFixed(4)}</td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${
+                          order.status === "EXECUTED"
+                            ? "bg-green-500/10 text-green-500"
+                            : order.status === "PENDING"
+                            ? "bg-yellow-500/10 text-yellow-500"
+                            : "bg-red-500/10 text-red-500"
+                        }`}
+                      >
+                        {order.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {new Date(order.created_at).toLocaleString()}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
