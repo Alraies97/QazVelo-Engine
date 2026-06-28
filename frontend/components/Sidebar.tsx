@@ -63,17 +63,17 @@ export function Sidebar() {
         <NavItem
           icon={<TrendingUp size={20} />}
           label="Market Analytics"
-          href="#"
+          href="/analytics"
         />
         <NavItem
           icon={<Wallet size={20} />}
           label="Wallet"
-          href="#"
+          href="/wallet"
         />
         <NavItem
           icon={<Settings size={20} />}
           label="Settings"
-          href="#"
+          href="/settings"
         />
       </nav>
 

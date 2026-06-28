@@ -113,6 +113,8 @@ export interface AnalyticsMetrics {
 export interface TickerCalculateResponse {
   status: string;
   metrics: AnalyticsMetrics;
+  source: string;
+  computed_at: string;
   record_id?: number;
   persisted_by?: string;
 }

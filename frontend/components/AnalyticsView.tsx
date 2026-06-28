@@ -13,74 +13,77 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
+import type {
+  AnalyticsMetrics,
+  MockOrder,
+  TickerCalculateResponse,
+} from "@/lib/types";
 
-// Mock price/SMA data for chart (will fetch from backend later)
-const mockChartData = [
-  { time: "09:00", price: 64250, sma: 64100 },
-  { time: "10:00", price: 64500, sma: 64200 },
-  { time: "11:00", price: 64300, sma: 64350 },
-  { time: "12:00", price: 65000, sma: 64600 },
-  { time: "13:00", price: 64800, sma: 64750 },
-  { time: "14:00", price: 65200, sma: 64950 },
-  { time: "15:00", price: 65500, sma: 65150 },
-];
-
-// Mock order data (will fetch from backend endpoint /analytics/orders-history later)
-interface MockOrder {
-  id: number;
-  asset_symbol: string;
-  order_type: "MARKET" | "LIMIT";
-  side: "BUY" | "SELL";
-  price: number | null;
-  quantity: number;
-  status: "PENDING" | "EXECUTED" | "CANCELED";
-  created_at: string;
+interface ChartPoint {
+  time: string;
+  sma: number;
 }
-
-const mockOrders: MockOrder[] = [
-  {
-    id: 1,
-    asset_symbol: "BTC",
-    order_type: "MARKET",
-    side: "BUY",
-    price: 65500,
-    quantity: 0.1,
-    status: "EXECUTED",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 2,
-    asset_symbol: "ETH",
-    order_type: "LIMIT",
-    side: "SELL",
-    price: 3200,
-    quantity: 2,
-    status: "PENDING",
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-  },
-];
 
 export function AnalyticsView() {
   const [statusFilter, setStatusFilter] = React.useState<string>("ALL");
-  const [orders, setOrders] = React.useState<MockOrder[]>(mockOrders);
-  const [loading, setLoading] = React.useState(false);
+  const [orders, setOrders] = React.useState<MockOrder[]>([]);
+  const [metrics, setMetrics] = React.useState<AnalyticsMetrics | null>(null);
+  const [source, setSource] = React.useState<string | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = React.useState(false);
+  const [ordersLoading, setOrdersLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    // Uncomment to fetch real data from backend when auth is set up
-    // fetchOrders();
+    void fetchMarketAnalytics();
+    void fetchOrders();
   }, []);
 
-  const fetchOrders = async () => {
-    setLoading(true);
+  const fetchMarketAnalytics = async () => {
+    setAnalyticsLoading(true);
+    setError(null);
     try {
-      const response = await api.get("/analytics/orders-history");
+      const { data } = await api.post<TickerCalculateResponse>(
+        "/analytics/ticker-calculate",
+        {
+          ticker: "BTC-USD",
+          period: "1mo",
+          calculation_window: 3,
+        }
+      );
+      setMetrics(data.metrics);
+      setSource(data.source);
+    } catch (err) {
+      const status =
+        (err as { response?: { status?: number } }).response?.status;
+      setError(
+        status === 401
+          ? "Authentication required. Please sign in to access analytics."
+          : "Unable to load analytics data. Is the backend running?"
+      );
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
+  const fetchOrders = async () => {
+    setOrdersLoading(true);
+    try {
+      const response = await api.get<MockOrder[]>("/analytics/orders-history");
       setOrders(response.data);
     } catch (err) {
       console.error("Failed to fetch orders", err);
     } finally {
-      setLoading(false);
+      setOrdersLoading(false);
     }
   };
+
+  const chartData: ChartPoint[] = React.useMemo(() => {
+    if (!metrics) return [];
+    return metrics.simple_moving_average.map((value, index) => ({
+      time: `T${index + 1}`,
+      sma: value,
+    }));
+  }, [metrics]);
 
   const handleExport = async () => {
     try {
@@ -122,52 +125,47 @@ export function AnalyticsView() {
 
       {/* Chart Section */}
       <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
-        <h2 className="text-xl font-semibold text-foreground mb-6">
-          Live Price & SMA Indicator
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">
+              Live SMA Market Indicator
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {source ? `Source: ${source}` : "Loading analytics source..."}
+            </p>
+          </div>
+          {analyticsLoading && (
+            <div className="text-sm text-muted-foreground">Loading analytics...</div>
+          )}
+        </div>
         <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={mockChartData}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="hsl(var(--border))"
-              />
-              <XAxis
-                dataKey="time"
-                stroke="hsl(var(--muted-foreground))"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis
-                stroke="hsl(var(--muted-foreground))"
-                tick={{ fontSize: 12 }}
-                tickFormatter={(value) => `$${value}`}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(var(--card))",
-                  borderColor: "hsl(var(--border))",
-                  borderRadius: "0.5rem",
-                  color: "hsl(var(--foreground))",
-                }}
-              />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="price"
-                stroke="hsl(var(--primary))"
-                strokeWidth={3}
-                name="Price"
-              />
-              <Line
-                type="monotone"
-                dataKey="sma"
-                stroke="#10b981"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                name="SMA"
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          {error ? (
+            <div className="h-full flex items-center justify-center text-center text-muted-foreground px-4">
+              {error}
+            </div>
+          ) : chartData.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-muted-foreground px-4">
+              {analyticsLoading ? "Fetching chart data..." : "No metrics available yet."}
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="time" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12 }} />
+                <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12 }} tickFormatter={(value) => `$${value}`} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    borderColor: "hsl(var(--border))",
+                    borderRadius: "0.5rem",
+                    color: "hsl(var(--foreground))",
+                  }}
+                />
+                <Legend />
+                <Line type="monotone" dataKey="sma" stroke="hsl(var(--primary))" strokeWidth={3} name="SMA" dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 
@@ -209,7 +207,7 @@ export function AnalyticsView() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {ordersLoading ? (
                 <tr>
                   <td colSpan={8} className="px-6 py-12 text-center">
                     Loading orders...

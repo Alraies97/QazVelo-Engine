@@ -11,20 +11,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import api from "@/lib/api";
+import type { TickerCalculateResponse } from "@/lib/types";
 
 const DEFAULT_TICKER = "BTC-USD";
 const DEFAULT_PERIOD = "1mo";
 const DEFAULT_WINDOW = 3;
-
-interface TickerCalculateResponse {
-  status: string;
-  metrics: {
-    input_count: number;
-    applied_period: number;
-    simple_moving_average: number[];
-    volatility_standard_deviation: number[];
-  };
-}
 
 interface ChartPoint {
   time: string;
@@ -56,12 +47,11 @@ export function MarketOverview() {
 
         if (cancelled) return;
 
-        const sma = payload.metrics?.simple_moving_average ?? [];
+        const sma = payload.metrics.simple_moving_average ?? [];
         const points: ChartPoint[] = sma.map((price, index) => ({
           time: `T${index + 1}`,
           price,
         }));
-
         setData(points);
         if (points.length > 0) {
           const first = points[0].price;
@@ -69,6 +59,7 @@ export function MarketOverview() {
           setLatest(last);
           setChangePct(first !== 0 ? ((last - first) / first) * 100 : 0);
         }
+        setError(payload.source ? `Source: ${payload.source}` : null);
       } catch (err) {
         if (cancelled) return;
         const status =
