@@ -62,11 +62,17 @@ api.interceptors.response.use(
     const original = error.config as RetriableRequestConfig | undefined;
     const refreshToken = getRefreshToken();
 
+    // Never run the refresh-and-retry flow for the auth endpoints themselves.
+    // A failed login/register/refresh must surface its own error to the form
+    // instead of triggering a token refresh that churns auth state.
+    const isAuthEndpoint = (original?.url ?? "").includes("/auth/");
+
     if (
       error.response?.status === 401 &&
       original &&
       !original._retry &&
-      refreshToken
+      refreshToken &&
+      !isAuthEndpoint
     ) {
       original._retry = true;
       try {
