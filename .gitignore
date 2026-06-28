@@ -34,3 +34,18 @@ zookeeper/
 kafka-logs/
 *.tgz
 *.tar.gz
+
+# Node
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js
+.next
+out
+build
+
+# Env files
+.env*.local
+.env
