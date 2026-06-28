@@ -4,6 +4,7 @@ import * as React from "react";
 import { LayoutDashboard, TrendingUp, Wallet, Settings, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -31,6 +32,7 @@ function NavItem({ icon, label, active, onClick }: NavItemProps) {
 
 export function Sidebar() {
   const [activeTab, setActiveTab] = React.useState("dashboard");
+  const { logout } = useAuth();
 
   return (
     <aside className="w-64 border-r border-border bg-card/80 backdrop-blur-sm h-screen sticky top-0 flex flex-col">
@@ -74,7 +76,11 @@ export function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-border">
-        <Button variant="ghost" className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+        <Button
+          variant="ghost"
+          onClick={logout}
+          className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+        >
           <LogOut size={20} />
           Log Out
         </Button>

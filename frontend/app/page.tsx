@@ -5,8 +5,24 @@ import { Sidebar } from "@/components/Sidebar";
 import { Navbar } from "@/components/navbar";
 import { MarketOverview } from "@/components/MarketOverview";
 import { BuySellCard } from "@/components/BuySellCard";
+import { AuthScreen } from "@/components/AuthScreen";
+import { useAuth } from "@/lib/auth";
 
 export default function DashboardPage() {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">
+        Loading...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <AuthScreen />;
+  }
+
   return (
     <div className="min-h-screen bg-background flex">
       <Sidebar />
