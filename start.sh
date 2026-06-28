@@ -59,8 +59,8 @@ fi
 python3 -c "import qazvelo_analytics; print('C++ module: OK')"
 
 # --- Start FastAPI ---
-echo "Starting QazVelo FastAPI server on port 5000..."
+echo "Starting QazVelo FastAPI server on port 8000..."
 exec uvicorn app.main:app \
     --host 0.0.0.0 \
-    --port 5000 \
+    --port 8000 \
     --log-level info

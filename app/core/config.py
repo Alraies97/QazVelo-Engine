@@ -28,11 +28,12 @@ class Settings(BaseSettings):
     SECRET_KEY: str="super-secret-key-change-this-in-production-100-percent"
     ALGORITHM: str="HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int=60
+    REFRESH_TOKEN_EXPIRE_DAYS: int=7
 
     ALLOWED_ORIGINS: Annotated[List[str], BeforeValidator(parse_list)] = ["http://localhost:3000"]
     ALLOWED_HOSTS: Annotated[List[str], BeforeValidator(parse_list)] = ["*"]
 
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:1234@localhost:5432/qazvelo_db"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/qazvelo_db"
     KAFKA_BOOTSTRAP_SERVERS: str="localhost:9092"
     REDIS_URL: str="redis://localhost:6379"
 

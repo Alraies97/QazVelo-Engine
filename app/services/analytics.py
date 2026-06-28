@@ -28,7 +28,7 @@ class MarketAnalyticsService:
         }
               
     @staticmethod
-    async def get_live_market_analytics(db: AsyncSession, metric_name: str, period: int)-> Dict[str,any]:
+    async def get_live_market_analytics(db: AsyncSession, metric_name: str, period: int)-> Dict[str, Any]:
           
         query=(
             select(AnalyticsModel.metric_value)
