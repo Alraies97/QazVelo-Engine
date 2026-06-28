@@ -1,13 +1,15 @@
 import asyncio
 import json
 import logging
-from aiokafka import AIOKafkaConsumer
+from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from pydantic import ValidationError, BaseModel, Field
 from typing import Optional
+from datetime import datetime
 from app.core.config import settings
 from app.schemas.analytics import AnalyticsCreate
 from app.core.database import AsyncSessionLocal
 from app.models.analytics import AnalyticsModel
+from app.models.alerts import PriceAlert, AlertCondition
 from app.models.wallet import (
     MockWallet,
     MockPosition,
@@ -43,10 +45,10 @@ async def process_analytics_message(session, data):
     logger.info(f"💾 {validated_data.metric_name} saved successfully to database.")
 
 
-async def process_price_update(session, asset_symbol: str, market_price: float):
+async def process_price_update(session, producer, asset_symbol: str, market_price: float):
     logger.info(f"📊 Processing price update for {asset_symbol} @ ${market_price:.2f}")
 
-    # Find all matching pending limit orders
+    # Step 1: Process matching pending limit orders
     result = await session.execute(
         select(MockOrder)
         .options(
@@ -112,26 +114,76 @@ async def process_price_update(session, asset_symbol: str, market_price: float):
             f"@ market price ${execution_price:.2f}"
         )
 
+    # Step 2: Process and trigger price alerts
+    alert_result = await session.execute(
+        select(PriceAlert)
+        .where(
+            PriceAlert.asset_symbol == asset_symbol,
+            PriceAlert.is_active == True
+        )
+    )
+    active_alerts = alert_result.scalars().all()
+    logger.info(f"🔔 Found {len(active_alerts)} active price alerts for {asset_symbol}")
 
-async def process_message(msg_body: str):
+    for alert in active_alerts:
+        triggered = False
+        if alert.condition == AlertCondition.ABOVE and market_price >= alert.target_price:
+            triggered = True
+        elif alert.condition == AlertCondition.BELOW and market_price <= alert.target_price:
+            triggered = True
 
+        if triggered:
+            # Update alert in DB
+            alert.is_active = False
+            alert.triggered_at = datetime.utcnow()
+
+            # Publish notification to Kafka topic 'alerts_notifications'
+            notification = {
+                "user_id": alert.user_id,
+                "asset_symbol": alert.asset_symbol,
+                "target_price": alert.target_price,
+                "trigger_price": market_price,
+                "condition": alert.condition,
+                "alert_id": alert.id
+            }
+            if producer:
+                await producer.send_and_wait(
+                    "alerts_notifications",
+                    json.dumps(notification).encode("utf-8")
+                )
+                logger.info(
+                    f"📤 Published alert notification for user {alert.user_id} "
+                    f"on {asset_symbol} (triggered at ${market_price:.2f})"
+                )
+            else:
+                logger.warning(
+                    f"⚠️ Kafka producer not available, could not publish alert notification"
+                )
+
+            logger.info(
+                f"🔔 Price Alert #{alert.id} triggered! {alert.asset_symbol} {alert.condition} "
+                f"${alert.target_price:.2f} reached ${market_price:.2f}"
+            )
+
+
+async def process_message(session, producer, msg_body: str):
     try:
         data = json.loads(msg_body)
 
-        async with AsyncSessionLocal() as session:
-            # Check if message is a price update (has asset_symbol and market_price)
-            if "asset_symbol" in data and "market_price" in data:
-                price_update = PriceUpdate(**data)
-                await process_price_update(
-                    session,
-                    price_update.asset_symbol,
-                    price_update.market_price
-                )
-            else:
-                # Assume it's an analytics message
-                await process_analytics_message(session, data)
+        # Check if message is a price update (has asset_symbol and market_price)
+        if "asset_symbol" in data and "market_price" in data:
+            price_update = PriceUpdate(**data)
+            await process_price_update(
+                session,
+                producer,
+                price_update.asset_symbol,
+                price_update.market_price
+            )
+        else:
+            # Assume it's an analytics message
+            await process_analytics_message(session, data)
 
-            await session.commit()
+        await session.commit()
 
     except json.JSONDecodeError:
         logger.error("❌ Failed to decode message body to JSON.")
@@ -140,24 +192,34 @@ async def process_message(msg_body: str):
     except Exception as e:
         logger.error(f"❌ Unexpected error during processing: {e}")
 
+
 async def start_worker():
-    
+    # Initialize Kafka consumer
     consumer = AIOKafkaConsumer(
         "market_analytics",
-        bootstrap_servers="localhost:9092",
+        bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
         group_id="analytics_worker_group",
-        auto_offset_reset="earliest" 
+        auto_offset_reset="earliest"
     )
-    
+
+    # Initialize Kafka producer for alerts notifications
+    producer = AIOKafkaProducer(
+        bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+        value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    )
+
     await consumer.start()
-    logger.info("🚀 QazVelo-Worker is up and listening to 'market_analytics' topic...")
-    
+    await producer.start()
+    logger.info("🚀 QazVelo-Worker is up!")
+
     try:
-        async for msg in consumer:
-            message_body = msg.value.decode("utf-8")
-            await process_message(message_body)
+        async with AsyncSessionLocal() as session:
+            async for msg in consumer:
+                message_body = msg.value.decode("utf-8")
+                await process_message(session, producer, message_body)
     finally:
         await consumer.stop()
+        await producer.stop()
         logger.info("🔌 Worker stopped and disconnected from Kafka safely.")
 
 if __name__ == "__main__":
