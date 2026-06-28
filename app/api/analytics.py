@@ -1,15 +1,22 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
-from typing import List
+from sqlalchemy.orm import selectinload
+from typing import List, Optional
+from io import StringIO
+import csv
+from datetime import datetime
 from fastapi_limiter.depends import RateLimiter
 from app.core.database import get_db
 from app.api.users import get_current_user
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
+from app.models.wallet import MockOrder, OrderStatus, OrderType, OrderSide, MockWallet
 from app.schemas.analytics import AnalyticsResponse, PaginatedAnalyticsResponse
+from app.schemas.wallet import MockOrderResponse
 from app.services.analytics import MarketAnalyticsService
 from app.services.market_data import MarketDataService
 from typing import Dict, Any
@@ -156,4 +163,113 @@ async def get_analytics_history(
         page=page,
         page_size=page_size,
         results=rows,
+    )
+
+
+@router.get(
+    "/orders-history",
+    response_model=List[MockOrderResponse],
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RateLimiter(times=30, seconds=60))],
+)
+async def get_orders_history(
+    request: Request,
+    current_user: UserModel = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    status_filter: Optional[OrderStatus] = Query(None, description="Filter orders by status (PENDING, EXECUTED, CANCELED)"),
+    order_type_filter: Optional[OrderType] = Query(None, description="Filter orders by type (MARKET, LIMIT)"),
+    asset_filter: Optional[str] = Query(None, description="Filter orders by asset symbol (e.g., BTC, AAPL)"),
+):
+    # First get user's wallet
+    wallet_result = await db.execute(
+        select(MockWallet).where(MockWallet.user_id == current_user.id)
+    )
+    wallet = wallet_result.scalar_one_or_none()
+    if not wallet:
+        return []
+
+    query = select(MockOrder).where(MockOrder.wallet_id == wallet.id)
+
+    if status_filter:
+        query = query.where(MockOrder.status == status_filter)
+    if order_type_filter:
+        query = query.where(MockOrder.order_type == order_type_filter)
+    if asset_filter:
+        query = query.where(MockOrder.asset_symbol.ilike(f"%{asset_filter}%"))
+
+    # Apply ordering
+    query = query.order_by(MockOrder.created_at.desc())
+
+    rows_result = await db.execute(query)
+    return rows_result.scalars().all()
+
+
+@router.get(
+    "/export",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RateLimiter(times=5, seconds=60))],
+)
+async def export_analytics_data(
+    request: Request,
+    current_user: UserModel = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Get user's orders and analytics
+    wallet_result = await db.execute(
+        select(MockWallet).where(MockWallet.user_id == current_user.id)
+    )
+    wallet = wallet_result.scalar_one_or_none()
+
+    # Get orders
+    orders_query = select(MockOrder).where(MockOrder.wallet_id == wallet.id) if wallet else select(MockOrder).where(False)
+    orders_result = await db.execute(orders_query.order_by(MockOrder.created_at.desc()))
+    orders = orders_result.scalars().all()
+
+    # Get analytics
+    analytics_result = await db.execute(
+        select(AnalyticsModel).where(AnalyticsModel.user_id == current_user.id).order_by(AnalyticsModel.timestamp.desc()))
+    analytics = analytics_result.scalars().all()
+
+    # Generate CSV
+    output = StringIO()
+    writer = csv.writer(output)
+
+    # Write header for orders
+    writer.writerow([
+        "Order ID", "Asset Symbol", "Type", "Side", "Price",
+        "Quantity", "Status", "Created At (UTC)"
+    ])
+
+    for order in orders:
+        writer.writerow([
+            order.id,
+            order.asset_symbol,
+            order.order_type.value,
+            order.side.value,
+            order.price,
+            order.quantity,
+            order.status.value,
+            order.created_at.isoformat(),
+        ])
+
+    writer.writerow([])  # Empty row
+    writer.writerow([
+        "Analytics ID", "Metric Name", "Metric Value", "Timestamp", "Extra Payload"
+    ])
+    for record in analytics:
+        writer.writerow([
+            record.id,
+            record.metric_name,
+            record.metric_value,
+            record.timestamp.isoformat(),
+            str(record.extra_payload),
+        ])
+
+    output.seek(0)
+    filename = f"qazvelo-analytics-export-{datetime.utcnow().isoformat()}.csv"
+
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
