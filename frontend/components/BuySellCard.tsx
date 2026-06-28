@@ -47,6 +47,10 @@ export function BuySellCard() {
         payload
       );
 
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("wallet:updated"));
+      }
+
       setFeedback({
         type: "success",
         message: `Order #${order.id} ${order.status.toLowerCase()}: ${order.side} ${order.quantity} ${order.asset_symbol}`,

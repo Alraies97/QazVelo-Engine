@@ -7,10 +7,10 @@ from app.schemas.wallet import (
     MockWalletResponse,
     MockPositionResponse,
     MockOrderCreate,
-    MockOrderResponse
+    MockOrderResponse,
+    WalletSummaryResponse,
 )
 from app.services.wallet import WalletService
-from typing import Dict
 
 router = APIRouter(prefix="/wallet", tags=["Mock Wallet"])
 
@@ -25,7 +25,7 @@ async def create_wallet(
     return MockWalletResponse.model_validate(wallet)
 
 
-@router.get("", response_model=Dict)
+@router.get("", response_model=WalletSummaryResponse)
 async def get_wallet(
     current_user: UserModel = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)

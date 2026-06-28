@@ -46,6 +46,26 @@ export function WalletView() {
     loadWallet();
   }, [loadWallet]);
 
+  React.useEffect(() => {
+    const handleWalletUpdated = () => {
+      void loadWallet();
+    };
+
+    window.addEventListener("wallet:updated", handleWalletUpdated);
+    return () => {
+      window.removeEventListener("wallet:updated", handleWalletUpdated);
+    };
+  }, [loadWallet]);
+
+  const totalPositionsValue = summary
+    ? summary.positions.reduce(
+        (acc, position) =>
+          acc + position.quantity * position.average_entry_price,
+        0
+      )
+    : 0;
+  const netWorth = summary ? summary.wallet.balance + totalPositionsValue : 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -86,7 +106,17 @@ export function WalletView() {
             <div className="text-4xl font-bold text-foreground">
               {formatCurrency(summary.wallet.balance, summary.wallet.currency)}
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="text-sm text-muted-foreground">Positions value</div>
+              <div className="text-sm font-semibold text-foreground">
+                {formatCurrency(totalPositionsValue, summary.wallet.currency)}
+              </div>
+              <div className="text-sm text-muted-foreground">Net worth</div>
+              <div className="text-sm font-semibold text-foreground">
+                {formatCurrency(netWorth, summary.wallet.currency)}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-4">
               Wallet #{summary.wallet.id} · created{" "}
               {formatDateTime(summary.wallet.created_at)}
             </p>

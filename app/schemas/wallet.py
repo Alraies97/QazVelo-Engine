@@ -55,3 +55,11 @@ class MockOrderResponse(MockOrderBase):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class WalletSummaryResponse(BaseModel):
+    wallet: MockWalletResponse
+    positions: list[MockPositionResponse]
+    recent_orders: list[MockOrderResponse]
+
+    model_config = {"from_attributes": True}
