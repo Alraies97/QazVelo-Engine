@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from io import StringIO
 import csv
 from datetime import datetime
@@ -18,8 +18,6 @@ from app.schemas.analytics import AnalyticsResponse, PaginatedAnalyticsResponse
 from app.schemas.wallet import MockOrderResponse
 from app.services.analytics import MarketAnalyticsService
 from app.services.market_data import MarketDataService
-from typing import Dict, Any
-from app.core.database import AsyncSessionLocal
 
 
 router = APIRouter(prefix="/analytics", tags=["Core Analytics"])
