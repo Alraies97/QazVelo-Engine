@@ -1,3 +1,27 @@
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  is_active: boolean;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+}
+
+export interface LoginCredentials {
+  username: string;
+  password: string;
+}
+
+export interface RegisterCredentials {
+  username: string;
+  email: string;
+  password: string;
+}
+
 export enum OrderType {
   MARKET = "MARKET",
   LIMIT = "LIMIT",
