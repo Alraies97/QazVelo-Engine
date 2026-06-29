@@ -43,6 +43,21 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     REDIS_URL: str = "redis://localhost:6379"
 
+    # ── Binance Exchange Integration ──────────────────────────────────────────
+    # Set these in Replit Secrets (never in .env or committed config).
+    # Leave empty to stay in paper-trading mode (default / safe).
+    #
+    # BINANCE_TESTNET=true  → connects to testnet.binance.vision (no real funds)
+    # BINANCE_TESTNET=false → connects to api.binance.com  (USE WITH CAUTION)
+    #
+    # ENABLE_BINANCE_LIVE_TRADING is the master kill-switch.
+    # It must be explicitly set to True before any order is forwarded to Binance.
+    # ─────────────────────────────────────────────────────────────────────────
+    BINANCE_API_KEY: str = ""
+    BINANCE_SECRET_KEY: str = ""
+    BINANCE_TESTNET: bool = True
+    ENABLE_BINANCE_LIVE_TRADING: bool = False
+
     @model_validator(mode="after")
     def validate_secrets(self) -> Self:
         if not self.SECRET_KEY or len(self.SECRET_KEY) < 32:

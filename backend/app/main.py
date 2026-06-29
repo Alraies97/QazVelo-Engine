@@ -12,6 +12,7 @@ from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.api.wallet import router as wallet_router
 from app.api.alerts import router as alerts_router
+from app.api.binance import router as binance_router
 from app.core.database import engine, Base
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
@@ -103,11 +104,12 @@ app.add_middleware(
 )
 
 app.include_router(analytics_router, prefix=settings.API_V1_STR)
-app.include_router(ws_router, prefix=settings.API_V1_STR)
-app.include_router(auth_router, prefix=settings.API_V1_STR)
-app.include_router(users_router, prefix=settings.API_V1_STR)
-app.include_router(wallet_router, prefix=settings.API_V1_STR)
-app.include_router(alerts_router, prefix=settings.API_V1_STR)
+app.include_router(ws_router,        prefix=settings.API_V1_STR)
+app.include_router(auth_router,      prefix=settings.API_V1_STR)
+app.include_router(users_router,     prefix=settings.API_V1_STR)
+app.include_router(wallet_router,    prefix=settings.API_V1_STR)
+app.include_router(alerts_router,    prefix=settings.API_V1_STR)
+app.include_router(binance_router,   prefix=settings.API_V1_STR)
 
 
 @app.get("/", tags=["Health"])
