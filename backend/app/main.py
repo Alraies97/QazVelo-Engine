@@ -16,13 +16,47 @@ from app.api.binance import router as binance_router, start_all_streams, stop_al
 from app.api.ws_market import router as ws_market_router
 from app.core.database import engine, Base
 from app.core.cache import set_redis_client
+from app.services.market_data import MarketDataService
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
 from app.models.wallet import MockWallet, MockPosition, MockOrder
 from app.models.alerts import PriceAlert
+import asyncio
 import json
+import logging
+
+logger = logging.getLogger("QazVelo-Startup")
 
 _redis_client = None
+
+# Tickers whose price history is prefetched into Redis on every boot.
+# Must stay in sync with the ASSETS list in the React frontend.
+_PREFETCH_TICKERS = [
+    ("BTC-USD", "1mo"),
+    ("ETH-USD", "1mo"),
+    ("AAPL",    "1mo"),
+]
+
+
+async def _warm_startup_cache() -> None:
+    """Fetch historical prices for all frontend tickers concurrently and
+    write them into the Redis/fakeredis cache so the very first user request
+    for each asset is served from cache, not from a cold yfinance call."""
+    logger.info("🔥 [QazVelo-Cache] Starting startup cache warm for %d tickers…", len(_PREFETCH_TICKERS))
+
+    async def _warm_one(ticker: str, period: str) -> None:
+        try:
+            prices = await MarketDataService.get_historical_price(ticker, period)
+            if prices:
+                # Also update the long-lived stale key.
+                await MarketDataService.warm_cache(ticker, period)
+                logger.info("✅ [QazVelo-Cache] Warmed %s (%s) — %d points", ticker, period, len(prices))
+            else:
+                logger.warning("⚠️  [QazVelo-Cache] No data for %s (%s) — skipped", ticker, period)
+        except Exception as exc:
+            logger.warning("⚠️  [QazVelo-Cache] Failed to warm %s: %s", ticker, exc)
+
+    await asyncio.gather(*[_warm_one(t, p) for t, p in _PREFETCH_TICKERS])
 
 
 @asynccontextmanager
@@ -57,6 +91,11 @@ async def lifespan(app: FastAPI):
         except Exception as fe:
             print(f"⚠️  [QazVelo-Engine] Could not init rate limiter: {fe}")
             _redis_client = None
+
+    # Pre-warm the Redis cache for all frontend tickers in the background.
+    # create_task schedules work on the running event loop without blocking startup.
+    asyncio.create_task(_warm_startup_cache())
+    print("🔥 [QazVelo-Engine] Cache warm-up task scheduled (BTC-USD, ETH-USD, AAPL)")
 
     # Start Binance live price streams (public — no API key required for market data)
     await start_all_streams()

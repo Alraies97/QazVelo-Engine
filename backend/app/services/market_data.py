@@ -1,11 +1,17 @@
 import asyncio
 import json
 import logging
+import threading
 from typing import List, Optional
 
 import yfinance as yf
 
 from app.core.cache import get_redis_client
+
+# yfinance uses an internal SQLite cache that raises "database is locked" when
+# multiple threads write to it simultaneously.  This lock serialises all
+# yfinance calls so only one thread touches SQLite at a time.
+_yfinance_lock = threading.Lock()
 
 logger = logging.getLogger("QazVelo-MarketData")
 
@@ -19,15 +25,16 @@ def _cache_key(ticker: str, period: str) -> str:
 class MarketDataService:
     @staticmethod
     def _fetch_historical_price(ticker: str, period: str = "1mo") -> Optional[List[float]]:
-        try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period=period)
-            if hist.empty:
+        with _yfinance_lock:
+            try:
+                stock = yf.Ticker(ticker)
+                hist = stock.history(period=period)
+                if hist.empty:
+                    return None
+                return hist["Close"].dropna().tolist()
+            except Exception as exc:
+                logger.warning("yfinance fetch failed for %s (%s): %s", ticker, period, exc)
                 return None
-            return hist["Close"].dropna().tolist()
-        except Exception as exc:
-            logger.warning("yfinance fetch failed for %s (%s): %s", ticker, period, exc)
-            return None
 
     @staticmethod
     async def get_historical_price(ticker: str, period: str = "1mo") -> Optional[List[float]]:
