@@ -42,23 +42,23 @@ export interface ButtonProps
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, type, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button";
     const resolvedProps = { ...props } as React.ButtonHTMLAttributes<HTMLButtonElement>;
 
     // Default to explicit "button" type to avoid accidental form submissions
     // when the component is used inside a form without an explicit `type` prop.
-    if (!type && Comp === "button") {
-      (resolvedProps as any).type = "button";
-    } else if (type) {
-      (resolvedProps as any).type = type;
+    const finalProps: React.ButtonHTMLAttributes<HTMLButtonElement> = {
+      ...resolvedProps,
+      type: (type as React.ButtonHTMLAttributes<HTMLButtonElement>['type']) ?? 'button',
+    };
+
+    if (asChild) {
+      return (
+        <Slot className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...resolvedProps} />
+      );
     }
 
     return (
-      <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
-        ref={ref}
-        {...resolvedProps}
-      />
+      <button className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...finalProps} />
     );
   }
 );

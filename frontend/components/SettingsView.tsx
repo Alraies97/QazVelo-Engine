@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { AlertCondition, PriceAlert } from "@/lib/types";
+import { AlertCondition } from "@/lib/types";
+import type { PriceAlert } from "@/lib/types";
 
 export function SettingsView() {
   const { user, updateUser } = useAuth();
@@ -43,10 +44,6 @@ export function SettingsView() {
     setEmail(user?.email ?? "");
   }, [user]);
 
-  React.useEffect(() => {
-    void loadAlerts();
-  }, []);
-
   const loadAlerts = React.useCallback(async () => {
     setAlertsLoading(true);
     setAlertsError(null);
@@ -54,11 +51,16 @@ export function SettingsView() {
       const { data } = await api.get<PriceAlert[]>("/alerts?is_active=true");
       setAlerts(data);
     } catch (err) {
+      console.error('loadAlerts failed', err);
       setAlertsError("Failed to load alerts. Please refresh.");
     } finally {
       setAlertsLoading(false);
     }
   }, []);
+
+  React.useEffect(() => {
+    void loadAlerts();
+  }, [loadAlerts]);
 
   const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault();
