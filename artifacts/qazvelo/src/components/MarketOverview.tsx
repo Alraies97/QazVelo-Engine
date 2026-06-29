@@ -40,7 +40,6 @@ const ASSETS: AssetOption[] = [
   { label: "AAPL/USD", ticker: "AAPL",   binanceSymbol: null,      color: "#a78bfa" },
 ];
 
-const REFRESH_MS = 30_000;
 const TICK_MS = 3_000;
 const MAX_POINTS = 50;
 
@@ -63,13 +62,19 @@ export function MarketOverview() {
   const tickCounterRef = React.useRef(0);
   const selectedAssetRef = React.useRef(selectedAsset);
   const baselineReadyRef = React.useRef(false);
+  const fetchingRef = React.useRef(false);
+  const lastFetchRef = React.useRef(0);
   const wsRef = React.useRef<ReconnectingWebSocket | null>(null);
   const wsTickTimeRef = React.useRef(0);
 
   React.useLayoutEffect(() => { selectedAssetRef.current = selectedAsset; }, [selectedAsset]);
 
   const fetchData = React.useCallback(async (isInitial: boolean) => {
+    if (fetchingRef.current) return;
     const asset = selectedAssetRef.current;
+    const now = Date.now();
+    if (!isInitial && now - lastFetchRef.current < 60_000) return;
+    fetchingRef.current = true;
     if (isInitial) setLoading(true); else setRefreshing(true);
     setError(null);
     try {
@@ -77,6 +82,7 @@ export function MarketOverview() {
         "/analytics/ticker-calculate",
         { ticker: asset.ticker, period: "1mo", calculation_window: 3 }
       );
+      lastFetchRef.current = Date.now();
       const pts: ChartPoint[] = resp.metrics.simple_moving_average.map((v, i) => ({
         time: `T${i + 1}`,
         price: Math.round(v * 100) / 100,
@@ -95,11 +101,14 @@ export function MarketOverview() {
       const s = (err as { response?: { status?: number } }).response?.status;
       const msg = s === 401
         ? "Authentication required."
+        : s === 404
+        ? "Historical data unavailable for this ticker."
         : "Unable to load market data. Is the backend running?";
       setError(msg);
       if (isInitial) toast.error(msg);
       setTicking(false);
     } finally {
+      fetchingRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
@@ -116,8 +125,6 @@ export function MarketOverview() {
     baselineReadyRef.current = false;
 
     void fetchData(true);
-    const timer = setInterval(() => void fetchData(false), REFRESH_MS);
-    return () => clearInterval(timer);
   }, [selectedAsset.ticker, fetchData]);
 
   React.useEffect(() => {
@@ -203,11 +210,8 @@ export function MarketOverview() {
     return () => clearInterval(timer);
   }, [ticking, selectedAsset.ticker, liveSource]);
 
-  React.useEffect(() => {
-    const handler = () => setTimeout(() => void fetchData(false), 800);
-    window.addEventListener("wallet:updated", handler);
-    return () => window.removeEventListener("wallet:updated", handler);
-  }, [fetchData]);
+  // Note: Historical data is fetched once on asset selection. Live updates come from WebSocket.
+  // Do NOT call fetchData on wallet:updated — it triggers ticker-calculate and causes rate limiting.
 
   const pctChange =
     currentPrice !== null && openPrice !== null && openPrice > 0

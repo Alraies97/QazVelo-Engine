@@ -66,7 +66,11 @@ export function AnalyticsView() {
     };
   }, []);
 
+  const hasLoadedRef = React.useRef(false);
+
   const fetchMarketAnalytics = async () => {
+    if (hasLoadedRef.current) return;
+    hasLoadedRef.current = true;
     setAnalyticsLoading(true);
     setError(null);
     try {
@@ -79,11 +83,12 @@ export function AnalyticsView() {
       setSource(data.source);
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
-      setError(
-        status === 401
-          ? "Authentication required. Please sign in to access analytics."
-          : "Unable to load analytics data."
-      );
+      const msg = status === 401
+        ? "Authentication required. Please sign in to access analytics."
+        : status === 404
+        ? "Historical data unavailable for BTC-USD."
+        : "Unable to load analytics data.";
+      setError(msg);
       toast.error("Analytics: Failed to load market data.");
     } finally {
       setAnalyticsLoading(false);
@@ -136,7 +141,7 @@ export function AnalyticsView() {
     setLiveCalcError(null);
     try {
       const { data } = await api.get<TickerCalculateResponse>("/analytics/live-calculate", {
-        params: { metric_name: "BTC-USD", period: 5 },
+        params: { metric_name: "BTC-USD:SMA_3", period: 5 },
       });
       setLiveCalcData(data);
       toast.success("Live analytics fetched successfully.");
