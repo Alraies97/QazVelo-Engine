@@ -7,7 +7,7 @@ import logging
 
 logger = logging.getLogger("QazVelo-Config")
 
-_INSECURE_DEFAULT_KEY = "super-secret-key-change-this-in-production-100-percent"
+_INSECURE_DEFAULT_KEY = ""  # empty string → validator always rejects it in production
 
 
 def parse_list(v: str | List[str]) -> List[str]:
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     API_V1_STR: str = "/api/v1"
 
-    SECRET_KEY: str = _INSECURE_DEFAULT_KEY
+    SECRET_KEY: str = ""  # must be set via env var / run.py bootstrap; never hardcoded
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -45,14 +45,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_secrets(self) -> Self:
-        if self.SECRET_KEY == _INSECURE_DEFAULT_KEY:
+        if not self.SECRET_KEY or len(self.SECRET_KEY) < 32:
             if self.ENVIRONMENT != "development":
                 raise ValueError(
-                    "SECRET_KEY must be set to a secure random value in non-development environments. "
-                    "Set the SECRET_KEY environment variable or Replit secret before deploying."
+                    "SECRET_KEY must be set to a secure random value (≥32 chars) in non-development "
+                    "environments. Set it via the SECRET_KEY Replit Secret before deploying."
                 )
             logger.warning(
-                "⚠️  Using default insecure SECRET_KEY — set SECRET_KEY env var before deploying to production."
+                "⚠️  SECRET_KEY is empty or too short. "
+                "Set SECRET_KEY env var or run via run.py which auto-generates one."
             )
         return self
 
