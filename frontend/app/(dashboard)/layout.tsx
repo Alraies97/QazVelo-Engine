@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import * as React from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Navbar } from "@/components/navbar";

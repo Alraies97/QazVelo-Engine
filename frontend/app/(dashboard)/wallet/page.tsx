@@ -1,4 +1,4 @@
-"use client";
+export const dynamic = 'force-dynamic';
 
 import { WalletView } from "@/components/WalletView";
 
