@@ -20,6 +20,51 @@ export function BuySellCard() {
     message: string;
   } | null>(null);
 
+  const [walletBalance, setWalletBalance] = React.useState<number | null>(null);
+  const [positions, setPositions] = React.useState<{ asset_symbol: string; quantity: number }[]>([]);
+  const [walletLoading, setWalletLoading] = React.useState(true);
+
+  const fetchWallet = React.useCallback(async () => {
+    try {
+      const { data } = await api.get<WalletSummary>("/wallet");
+      setWalletBalance(data.wallet.balance);
+      setPositions(data.positions ?? []);
+    } catch {
+      setWalletBalance(null);
+      setPositions([]);
+    } finally {
+      setWalletLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchWallet();
+    const handler = () => fetchWallet();
+    window.addEventListener("wallet:updated", handler);
+    return () => window.removeEventListener("wallet:updated", handler);
+  }, [fetchWallet]);
+
+  const qty = Number(quantity);
+  const px = Number(price);
+  const total = qty * px;
+
+  const currentPosition = positions.find((p) => p.asset_symbol === asset);
+  const heldQuantity = currentPosition?.quantity ?? 0;
+
+  const insufficientFunds =
+    side === "buy" &&
+    walletBalance !== null &&
+    qty > 0 &&
+    px > 0 &&
+    total > walletBalance;
+
+  const insufficientPosition =
+    side === "sell" &&
+    qty > 0 &&
+    qty > heldQuantity;
+
+  const hasWarning = insufficientFunds || insufficientPosition;
+
   const handleSubmit = async () => {
     setLoading(true);
     setFeedback(null);
@@ -37,12 +82,16 @@ export function BuySellCard() {
 
       const { data: order } = await api.post<MockOrder>("/wallet/orders", payload);
 
+      setWalletBalance(summary.wallet.balance);
+      setPositions(summary.positions ?? []);
       window.dispatchEvent(new Event("wallet:updated"));
 
       setFeedback({
         type: "success",
         message: `Order #${order.id} ${order.status.toLowerCase()}: ${order.side} ${order.quantity} ${order.asset_symbol}`,
       });
+
+      setQuantity("");
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
       const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
@@ -57,8 +106,6 @@ export function BuySellCard() {
       setLoading(false);
     }
   };
-
-  const total = Number(quantity) * Number(price);
 
   return (
     <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
@@ -87,6 +134,38 @@ export function BuySellCard() {
             Sell
           </button>
         </div>
+      </div>
+
+      {/* Balance / Position display */}
+      <div className="flex justify-between items-center mb-4 px-1">
+        {side === "buy" ? (
+          <div className="text-sm text-muted-foreground">
+            Available balance:{" "}
+            <span
+              className={cn(
+                "font-semibold tabular-nums",
+                walletLoading
+                  ? "text-muted-foreground"
+                  : walletBalance !== null
+                  ? "text-foreground"
+                  : "text-muted-foreground"
+              )}
+            >
+              {walletLoading
+                ? "Loading…"
+                : walletBalance !== null
+                ? `$${walletBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : "—"}
+            </span>
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground">
+            {asset} held:{" "}
+            <span className="font-semibold tabular-nums text-foreground">
+              {heldQuantity > 0 ? heldQuantity : "0"}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -157,8 +236,33 @@ export function BuySellCard() {
 
         <div className="flex justify-between items-center pt-2 border-t border-border">
           <span className="text-muted-foreground">Total</span>
-          <span className="font-bold text-foreground">${total.toFixed(2)}</span>
+          <span className={cn("font-bold tabular-nums", hasWarning ? "text-red-500" : "text-foreground")}>
+            ${total.toFixed(2)}
+          </span>
         </div>
+
+        {/* Pre-trade warnings */}
+        {insufficientFunds && (
+          <div className="text-sm rounded-lg px-3 py-2 bg-red-600/10 text-red-500">
+            Insufficient balance — need{" "}
+            <span className="font-semibold">${total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            {walletBalance !== null && (
+              <>, have{" "}
+                <span className="font-semibold">${walletBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </>
+            )}
+            .
+          </div>
+        )}
+
+        {insufficientPosition && (
+          <div className="text-sm rounded-lg px-3 py-2 bg-red-600/10 text-red-500">
+            Insufficient {asset} — need{" "}
+            <span className="font-semibold">{qty}</span>
+            , hold{" "}
+            <span className="font-semibold">{heldQuantity}</span>.
+          </div>
+        )}
 
         {feedback && (
           <div
@@ -179,7 +283,7 @@ export function BuySellCard() {
             side === "buy" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"
           )}
           onClick={handleSubmit}
-          disabled={loading || !quantity}
+          disabled={loading || !quantity || hasWarning}
         >
           {loading ? "Processing..." : `${side === "buy" ? "Buy" : "Sell"} ${asset}`}
         </Button>
