@@ -33,6 +33,7 @@ async function ensureWallet(): Promise<void> {
         await api.post("/wallet");
       } catch {
         // Non-fatal: trading card will surface its own error if needed.
+        console.warn("ensureWallet: failed to create wallet", err);
       }
     }
   }

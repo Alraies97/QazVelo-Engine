@@ -31,8 +31,19 @@ export function clearTokens(): void {
   window.localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
+// Build a resilient default baseURL:
+// 1. If `NEXT_PUBLIC_API_BASE_URL` is provided (absolute), use it.
+// 2. In browser, construct from current origin + `NEXT_PUBLIC_API_BASE_PATH` (useful when backend is proxied).
+// 3. Fallback to the common local dev backend address.
+const DEFAULT_BASE_PATH = process.env.NEXT_PUBLIC_API_BASE_PATH || "/api/v1";
+const resolvedBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL
+  ? process.env.NEXT_PUBLIC_API_BASE_URL
+  : typeof window !== "undefined"
+  ? `${window.location.origin}${DEFAULT_BASE_PATH}`
+  : "http://localhost:8000/api/v1";
+
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1",
+  baseURL: resolvedBaseURL,
   headers: {
     "Content-Type": "application/json",
   },

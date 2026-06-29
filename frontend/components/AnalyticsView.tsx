@@ -32,6 +32,7 @@ export function AnalyticsView() {
   const [analyticsLoading, setAnalyticsLoading] = React.useState(false);
   const [ordersLoading, setOrdersLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [ordersError, setOrdersError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     void fetchMarketAnalytics();
@@ -58,8 +59,11 @@ export function AnalyticsView() {
       setError(
         status === 401
           ? "Authentication required. Please sign in to access analytics."
-          : "Unable to load analytics data. Is the backend running?"
+          : `Unable to load analytics data. ${
+              (err as Error).message ?? "Is the backend running?"
+            }`
       );
+      console.error("fetchMarketAnalytics error:", err);
     } finally {
       setAnalyticsLoading(false);
     }
@@ -67,11 +71,18 @@ export function AnalyticsView() {
 
   const fetchOrders = async () => {
     setOrdersLoading(true);
+    setOrdersError(null);
     try {
-      const response = await api.get<MockOrder[]>("/analytics/orders-history");
-      setOrders(response.data);
+      const response = await api.get<MockOrder[]>('/analytics/orders-history');
+      setOrders(response.data || []);
     } catch (err) {
-      console.error("Failed to fetch orders", err);
+      console.error('Failed to fetch orders', err);
+      const status = (err as { response?: { status?: number } }).response?.status;
+      setOrdersError(
+        status === 401
+          ? 'Authentication required. Please sign in to view order history.'
+          : `Failed to load orders: ${(err as Error).message}`
+      );
     } finally {
       setOrdersLoading(false);
     }
@@ -86,19 +97,21 @@ export function AnalyticsView() {
   }, [metrics]);
 
   const handleExport = async () => {
+    setError(null);
     try {
-      const response = await api.get("/analytics/export", {
-        responseType: "blob",
+      const response = await api.get('/analytics/export', {
+        responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
+      const link = document.createElement('a');
       link.href = url;
-      link.setAttribute("download", `qazvelo-export-${Date.now()}.csv`);
+      link.setAttribute('download', `qazvelo-export-${Date.now()}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     } catch (err) {
-      console.error("Failed to export", err);
+      console.error('Failed to export', err);
+      setError(`Failed to export data: ${(err as Error).message}`);
     }
   };
 
@@ -213,7 +226,13 @@ export function AnalyticsView() {
                     Loading orders...
                   </td>
                 </tr>
-              ) : filteredOrders.length === 0 ? (
+                ) : ordersError ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center text-red-500">
+                      {ordersError}
+                    </td>
+                  </tr>
+                ) : filteredOrders.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-6 py-12 text-center">
                     No orders found matching your filters
