@@ -1,0 +1,1 @@
+- [Binance live streaming](binance-streaming.md) — BTC/ETH use Binance mainnet aggTrade WS (no API key); AAPL falls back to synthetic ticking; throttle WS ticks to 1/s in frontend.

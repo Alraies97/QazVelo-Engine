@@ -12,7 +12,8 @@ from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.api.wallet import router as wallet_router
 from app.api.alerts import router as alerts_router
-from app.api.binance import router as binance_router
+from app.api.binance import router as binance_router, start_all_streams, stop_all_streams
+from app.api.ws_market import router as ws_market_router
 from app.core.database import engine, Base
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
@@ -54,6 +55,10 @@ async def lifespan(app: FastAPI):
             print(f"⚠️  [QazVelo-Engine] Could not init rate limiter: {fe}")
             _redis_client = None
 
+    # Start Binance live price streams (public — no API key required for market data)
+    await start_all_streams()
+    print("📡 [QazVelo-Engine] Binance market streams started (BTC, ETH)")
+
     # Start Kafka producer (optional — graceful degradation when broker is absent)
     try:
         from aiokafka import AIOKafkaProducer
@@ -73,6 +78,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    await stop_all_streams()
     if getattr(app.state, "kafka_producer", None):
         await app.state.kafka_producer.stop()
     if _redis_client is not None:
@@ -110,6 +116,7 @@ app.include_router(users_router,     prefix=settings.API_V1_STR)
 app.include_router(wallet_router,    prefix=settings.API_V1_STR)
 app.include_router(alerts_router,    prefix=settings.API_V1_STR)
 app.include_router(binance_router,   prefix=settings.API_V1_STR)
+app.include_router(ws_market_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/", tags=["Health"])

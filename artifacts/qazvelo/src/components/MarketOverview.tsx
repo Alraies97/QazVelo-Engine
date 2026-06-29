@@ -8,7 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import api from "@/lib/api";
+import api, { getAccessToken } from "@/lib/api";
 import type { TickerCalculateResponse } from "@/lib/types";
 import {
   Select,
@@ -27,18 +27,21 @@ interface ChartPoint {
 interface AssetOption {
   label: string;
   ticker: string;
+  binanceSymbol: string | null;
   color: string;
 }
 
 const ASSETS: AssetOption[] = [
-  { label: "BTC/USD", ticker: "BTC-USD", color: "#f59e0b" },
-  { label: "ETH/USD", ticker: "ETH-USD", color: "#8b5cf6" },
-  { label: "AAPL/USD", ticker: "AAPL",    color: "#22c55e" },
+  { label: "BTC/USD", ticker: "BTC-USD", binanceSymbol: "BTCUSDT", color: "#f59e0b" },
+  { label: "ETH/USD", ticker: "ETH-USD", binanceSymbol: "ETHUSDT", color: "#8b5cf6" },
+  { label: "AAPL/USD", ticker: "AAPL",   binanceSymbol: null,      color: "#22c55e" },
 ];
 
 const REFRESH_MS  = 30_000;
 const TICK_MS     = 3_000;
 const MAX_POINTS  = 50;
+
+type LiveSource = "connecting" | "binance" | "simulated";
 
 export function MarketOverview() {
   const [selectedAsset, setSelectedAsset] = React.useState<AssetOption>(ASSETS[0]);
@@ -51,18 +54,19 @@ export function MarketOverview() {
   const [currentPrice, setCurrentPrice]   = React.useState<number | null>(null);
   const [openPrice, setOpenPrice]         = React.useState<number | null>(null);
   const [ticking, setTicking]             = React.useState(false);
+  const [liveSource, setLiveSource]       = React.useState<LiveSource>("simulated");
 
   const tickCounterRef   = React.useRef(0);
   const selectedAssetRef = React.useRef(selectedAsset);
+  const baselineReadyRef = React.useRef(false);
+  const wsRef            = React.useRef<WebSocket | null>(null);
+  const wsTickTimeRef    = React.useRef(0);
+
   React.useLayoutEffect(() => { selectedAssetRef.current = selectedAsset; }, [selectedAsset]);
 
   const fetchData = React.useCallback(async (isInitial: boolean) => {
     const asset = selectedAssetRef.current;
-    if (isInitial) {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
+    if (isInitial) { setLoading(true); } else { setRefreshing(true); }
     setError(null);
     try {
       const { data: resp } = await api.post<TickerCalculateResponse>(
@@ -76,6 +80,7 @@ export function MarketOverview() {
       const first = pts[0]?.price ?? null;
       const last  = pts[pts.length - 1]?.price ?? null;
       tickCounterRef.current = pts.length;
+      baselineReadyRef.current = true;
       setOpenPrice(first);
       setCurrentPrice(last);
       setData(pts);
@@ -83,9 +88,9 @@ export function MarketOverview() {
       setTicking(true);
       if (!isInitial) setChartKey((k) => k + 1);
     } catch (err) {
-      const status = (err as { response?: { status?: number } }).response?.status;
+      const s = (err as { response?: { status?: number } }).response?.status;
       setError(
-        status === 401
+        s === 401
           ? "Authentication required."
           : "Unable to load market data. Is the backend running?"
       );
@@ -104,6 +109,7 @@ export function MarketOverview() {
     setError(null);
     setLoading(true);
     setChartKey((k) => k + 1);
+    baselineReadyRef.current = false;
 
     void fetchData(true);
     const timer = setInterval(() => void fetchData(false), REFRESH_MS);
@@ -111,13 +117,93 @@ export function MarketOverview() {
   }, [selectedAsset.ticker, fetchData]);
 
   React.useEffect(() => {
-    if (!ticking) return;
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    if (!selectedAsset.binanceSymbol) {
+      setLiveSource("simulated");
+      return;
+    }
+
+    const token = getAccessToken();
+    if (!token) {
+      setLiveSource("simulated");
+      return;
+    }
+
+    setLiveSource("connecting");
+
+    const buildUrl = () => {
+      const baseUrl = api.defaults.baseURL ?? window.location.origin;
+      const url = new URL(baseUrl);
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      url.pathname = "/api/v1/ws/market";
+      url.searchParams.set("symbol", selectedAsset.binanceSymbol!);
+      url.searchParams.set("token", token);
+      return url.toString();
+    };
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(buildUrl());
+    } catch {
+      setLiveSource("simulated");
+      return;
+    }
+    wsRef.current = ws;
+
+    ws.onopen = () => setLiveSource("binance");
+
+    ws.onmessage = (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(event.data as string) as {
+          type: string;
+          price?: number;
+          symbol?: string;
+        };
+        if (msg.type !== "tick" || typeof msg.price !== "number") return;
+
+        const now = Date.now();
+        if (now - wsTickTimeRef.current < 1000) return;
+        wsTickTimeRef.current = now;
+
+        if (!baselineReadyRef.current) return;
+
+        const price = Math.round(msg.price * 100) / 100;
+        setCurrentPrice(price);
+        tickCounterRef.current += 1;
+        setData((prev) =>
+          [...prev, { time: `T${tickCounterRef.current}`, price }].slice(-MAX_POINTS)
+        );
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    ws.onerror = () => setLiveSource("simulated");
+
+    ws.onclose = () =>
+      setLiveSource((prev) => (prev === "binance" ? "simulated" : prev));
+
+    return () => {
+      ws.close();
+      wsRef.current = null;
+    };
+  }, [selectedAsset.ticker]);
+
+  React.useEffect(() => {
+    const shouldTick =
+      ticking && (!selectedAsset.binanceSymbol || liveSource === "simulated");
+    if (!shouldTick) return;
+
     const timer = setInterval(() => {
       setData((prev) => {
         if (prev.length === 0) return prev;
-        const last     = prev[prev.length - 1];
-        const drift    = last.price * 0.0001;
-        const noise    = (Math.random() - 0.48) * last.price * 0.002;
+        const last  = prev[prev.length - 1];
+        const drift = last.price * 0.0001;
+        const noise = (Math.random() - 0.48) * last.price * 0.002;
         const newPrice = Math.max(0.01, Math.round((last.price + drift + noise) * 100) / 100);
         setCurrentPrice(newPrice);
         tickCounterRef.current += 1;
@@ -125,7 +211,7 @@ export function MarketOverview() {
       });
     }, TICK_MS);
     return () => clearInterval(timer);
-  }, [ticking]);
+  }, [ticking, selectedAsset.ticker, liveSource]);
 
   React.useEffect(() => {
     const handler = () => setTimeout(() => void fetchData(false), 800);
@@ -139,44 +225,30 @@ export function MarketOverview() {
       : 0;
   const isPositive = pctChange >= 0;
 
+  const sourceBadge: { label: string; dot: string; badge: string } = {
+    binance:    { label: "Binance Live", dot: "bg-green-500 animate-pulse",   badge: "bg-green-500/10 text-green-500" },
+    connecting: { label: "Connecting…",  dot: "bg-amber-500 animate-pulse",   badge: "bg-amber-500/10 text-amber-500" },
+    simulated:  { label: selectedAsset.binanceSymbol ? "Simulated" : "Simulated", dot: "bg-muted-foreground", badge: "bg-muted text-muted-foreground" },
+  }[liveSource] ?? { label: "Simulated", dot: "bg-muted-foreground", badge: "bg-muted text-muted-foreground" };
+
   return (
     <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <h2 className="text-xl font-semibold text-foreground">Market Overview</h2>
-            <span
-              className={cn(
-                "flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium",
-                ticking
-                  ? "bg-green-500/10 text-green-500"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
-              <span
-                className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  ticking ? "bg-green-500 animate-pulse" : "bg-muted-foreground"
-                )}
-              />
-              {ticking ? "Live" : "Loading"}
+            <span className={cn("flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium", sourceBadge.badge)}>
+              <span className={cn("h-1.5 w-1.5 rounded-full", sourceBadge.dot)} />
+              {sourceBadge.label}
             </span>
           </div>
 
           {currentPrice !== null ? (
             <div className="flex items-baseline gap-2 mt-0.5">
               <span className="text-2xl font-bold text-foreground tabular-nums">
-                ${currentPrice.toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
+                ${currentPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
-              <span
-                className={cn(
-                  "text-sm font-semibold tabular-nums",
-                  isPositive ? "text-green-500" : "text-red-500"
-                )}
-              >
+              <span className={cn("text-sm font-semibold tabular-nums", isPositive ? "text-green-500" : "text-red-500")}>
                 {isPositive ? "▲" : "▼"} {Math.abs(pctChange).toFixed(2)}%
               </span>
             </div>
@@ -205,9 +277,7 @@ export function MarketOverview() {
             </SelectTrigger>
             <SelectContent>
               {ASSETS.map((a) => (
-                <SelectItem key={a.ticker} value={a.ticker}>
-                  {a.label}
-                </SelectItem>
+                <SelectItem key={a.ticker} value={a.ticker}>{a.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -259,10 +329,7 @@ export function MarketOverview() {
                   fontSize: "12px",
                 }}
                 formatter={(value: number) => [
-                  `$${value.toLocaleString("en-US", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}`,
+                  `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
                   selectedAsset.label,
                 ]}
               />
