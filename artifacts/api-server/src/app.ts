@@ -32,7 +32,7 @@ app.use(cors());
 // Body-parser middleware consumes the request stream; if it runs first, the
 // proxied POST body arrives empty at the FastAPI backend.
 export const pythonProxy: RequestHandler = createProxyMiddleware({
-  target: "http://127.0.0.1:5000",
+  target: "http://127.0.0.1:8000",
   changeOrigin: true,
   ws: true,
   pathFilter: "/api/v1",

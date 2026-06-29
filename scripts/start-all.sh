@@ -2,9 +2,9 @@
 # QazVelo Engine — composite startup script.
 #
 # Starts all three services required for the app:
-#   - Express API proxy     (port 8080) — proxies /api/v1/* to FastAPI
-#   - Vite React frontend   (port 22331) — served to the browser
-#   - Python FastAPI backend (port 5000) — business logic + auth + WebSocket
+#   - Vite React frontend   (port 5000)  — served to the browser (Replit preview)
+#   - Python FastAPI backend (port 8000) — business logic + auth + WebSocket
+#   - Express API proxy     (port 8080)  — proxies /api/v1/* to FastAPI
 #
 # If a port is already in use (e.g. an artifact workflow auto-started the
 # service), the script skips starting it to avoid conflicts.
@@ -31,6 +31,14 @@ port_already_in_use() {
 
 echo "[start-all] Checking service ports (waiting up to 8s for auto-started services)..."
 
+# Vite React frontend (must be on port 5000 for Replit preview)
+if port_already_in_use 5000; then
+  echo "[start-all] frontend already on port 5000 — skipping"
+else
+  echo "[start-all] Starting frontend on port 5000"
+  PORT=5000 BASE_PATH=/ pnpm --filter @workspace/qazvelo run dev &
+fi
+
 # Express API server (/api/v1/* proxy → FastAPI)
 if port_already_in_use 8080; then
   echo "[start-all] api-server already on port 8080 — skipping"
@@ -39,14 +47,6 @@ else
   PORT=8080 pnpm --filter @workspace/api-server run dev &
 fi
 
-# Vite React frontend
-if port_already_in_use 22331; then
-  echo "[start-all] frontend already on port 22331 — skipping"
-else
-  echo "[start-all] Starting frontend on port 22331"
-  PORT=22331 BASE_PATH=/ pnpm --filter @workspace/qazvelo run dev &
-fi
-
 # Python FastAPI backend — always starts here; blocks to keep script alive
-echo "[start-all] Starting Python FastAPI backend on port 5000"
+echo "[start-all] Starting Python FastAPI backend on port 8000"
 cd "$ROOT/backend" && exec python run.py
