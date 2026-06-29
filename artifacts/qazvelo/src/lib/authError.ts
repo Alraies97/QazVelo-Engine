@@ -18,4 +18,4 @@ export const labelClassName =
   "block text-sm font-medium text-muted-foreground mb-2";
 
 export const errorClassName =
-  "text-sm rounded-lg px-3 py-2 bg-red-600/10 text-red-500";
+  "text-sm rounded-lg px-3 py-2 bg-danger/10 text-danger border border-danger/20";

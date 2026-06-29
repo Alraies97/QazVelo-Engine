@@ -111,10 +111,17 @@ export function RegisterForm() {
 
       <Button
         type="submit"
-        className="w-full py-6 text-lg font-bold"
+        className="w-full py-6 text-lg font-bold bg-primary hover:bg-primary/80 text-primary-foreground"
         disabled={loading}
       >
-        {loading ? "Please wait..." : "Create Account"}
+        {loading ? (
+          <span className="flex items-center gap-2">
+            <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+            Creating account...
+          </span>
+        ) : (
+          "Create Account"
+        )}
       </Button>
     </form>
   );

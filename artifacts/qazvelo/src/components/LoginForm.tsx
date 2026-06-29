@@ -68,10 +68,17 @@ export function LoginForm() {
 
       <Button
         type="submit"
-        className="w-full py-6 text-lg font-bold"
+        className="w-full py-6 text-lg font-bold bg-primary hover:bg-primary/80 text-primary-foreground"
         disabled={loading}
       >
-        {loading ? "Please wait..." : "Sign In"}
+        {loading ? (
+          <span className="flex items-center gap-2">
+            <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+            Signing in...
+          </span>
+        ) : (
+          "Sign In"
+        )}
       </Button>
     </form>
   );

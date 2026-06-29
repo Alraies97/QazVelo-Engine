@@ -28,9 +28,7 @@ export function clearTokens(): void {
 }
 
 const DEFAULT_BASE_PATH = import.meta.env.VITE_API_BASE_PATH || "/api/v1";
-const resolvedBaseURL = import.meta.env.VITE_API_BASE_URL
-  ? import.meta.env.VITE_API_BASE_URL
-  : `${window.location.origin}${DEFAULT_BASE_PATH}`;
+const resolvedBaseURL = import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_PATH;
 
 const api = axios.create({
   baseURL: resolvedBaseURL,

@@ -11,6 +11,10 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import api, { getAccessToken } from "@/lib/api";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ReconnectingWebSocket } from "@/lib/ws";
 import type {
   AnalyticsMetrics,
   AnalyticsRecord,
@@ -44,7 +48,7 @@ export function AnalyticsView() {
   const [wsConnected, setWsConnected] = React.useState(false);
   const [wsMessages, setWsMessages] = React.useState<string[]>([]);
   const [wsError, setWsError] = React.useState<string | null>(null);
-  const wsRef = React.useRef<WebSocket | null>(null);
+  const wsRef = React.useRef<ReconnectingWebSocket | null>(null);
 
   React.useEffect(() => {
     void fetchMarketAnalytics();
@@ -57,9 +61,8 @@ export function AnalyticsView() {
 
   React.useEffect(() => {
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      wsRef.current?.stop();
+      wsRef.current = null;
     };
   }, []);
 
@@ -79,8 +82,9 @@ export function AnalyticsView() {
       setError(
         status === 401
           ? "Authentication required. Please sign in to access analytics."
-          : `Unable to load analytics data. ${(err as Error).message ?? "Is the backend running?"}`
+          : "Unable to load analytics data."
       );
+      toast.error("Analytics: Failed to load market data.");
     } finally {
       setAnalyticsLoading(false);
     }
@@ -97,8 +101,9 @@ export function AnalyticsView() {
       setOrdersError(
         status === 401
           ? "Authentication required. Please sign in to view order history."
-          : `Failed to load orders: ${(err as Error).message}`
+          : "Failed to load orders."
       );
+      toast.error("Analytics: Failed to load order history.");
     } finally {
       setOrdersLoading(false);
     }
@@ -118,8 +123,9 @@ export function AnalyticsView() {
       setHistoryError(
         status === 401
           ? "Authentication required."
-          : `Failed to load analytics history: ${(err as Error).message}`
+          : "Failed to load analytics history."
       );
+      toast.error("Analytics: Failed to load history.");
     } finally {
       setHistoryLoading(false);
     }
@@ -133,13 +139,15 @@ export function AnalyticsView() {
         params: { metric_name: "BTC-USD", period: 5 },
       });
       setLiveCalcData(data);
+      toast.success("Live analytics fetched successfully.");
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
       setLiveCalcError(
         status === 401
           ? "Authentication required."
-          : `Failed to fetch live analytics: ${(err as Error).message}`
+          : "Failed to fetch live analytics."
       );
+      toast.error("Live analytics fetch failed.");
     } finally {
       setLiveCalcLoading(false);
     }
@@ -148,10 +156,8 @@ export function AnalyticsView() {
   const buildWebSocketUrl = () => {
     const accessToken = getAccessToken();
     if (!accessToken) throw new Error("Authentication required to connect to analytics websocket.");
-    const baseUrl = api.defaults.baseURL ?? window.location.origin;
-    const url = new URL(baseUrl);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    url.pathname = "/api/v1/ws/analytics";
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const url = new URL(`${protocol}//${window.location.host}/api/v1/ws/analytics`);
     url.searchParams.set("token", accessToken);
     return url.toString();
   };
@@ -161,12 +167,24 @@ export function AnalyticsView() {
     setWsError(null);
     setWsMessages([]);
     try {
-      const socket = new WebSocket(buildWebSocketUrl());
-      wsRef.current = socket;
-      socket.onopen = () => setWsConnected(true);
-      socket.onmessage = (event) => setWsMessages((msgs) => [...msgs, event.data]);
-      socket.onclose = () => setWsConnected(false);
-      socket.onerror = () => setWsError("WebSocket connection failed.");
+      const ws = new ReconnectingWebSocket(buildWebSocketUrl(), {
+        onOpen: () => {
+          setWsConnected(true);
+          setWsError(null);
+        },
+        onMessage: (event) => {
+          setWsMessages((msgs) => [...msgs, event.data as string]);
+        },
+        onClose: () => {
+          setWsConnected(false);
+        },
+        onError: (err) => {
+          setWsError("WebSocket connection failed.");
+          setWsConnected(false);
+        },
+      });
+      wsRef.current = ws;
+      ws.start();
     } catch (err) {
       setWsError((err as Error).message);
       setWsConnected(false);
@@ -174,16 +192,15 @@ export function AnalyticsView() {
   };
 
   const disconnectWebSocket = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
+    wsRef.current?.stop();
+    wsRef.current = null;
     setWsConnected(false);
   };
 
   const sendWebSocketMetric = () => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       setWsError("WebSocket is not connected. Connect first.");
+      toast.error("WebSocket not connected.");
       return;
     }
     const payload = {
@@ -192,6 +209,7 @@ export function AnalyticsView() {
       extra_payload: { source: "browser-demo", timestamp: new Date().toISOString() },
     };
     wsRef.current.send(JSON.stringify(payload));
+    toast.success("Test metric sent.");
   };
 
   const chartData: ChartPoint[] = React.useMemo(() => {
@@ -210,8 +228,10 @@ export function AnalyticsView() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      toast.success("Export downloaded.");
     } catch (err) {
       setError(`Failed to export data: ${(err as Error).message}`);
+      toast.error("Export failed.");
     }
   };
 
@@ -222,37 +242,63 @@ export function AnalyticsView() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Financial Analyst Dashboard</h1>
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Financial Analyst Dashboard</h1>
           <p className="text-muted-foreground mt-2">Audit execution system and perform data analysis</p>
         </div>
-        <Button onClick={handleExport} className="bg-primary">Export Data to CSV</Button>
+        <Button onClick={handleExport} className="bg-primary hover:bg-primary/80 text-primary-foreground font-semibold">
+          Export Data to CSV
+        </Button>
       </div>
 
       {/* Chart Section */}
-      <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+      <div className="glass terminal-border rounded-xl p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
             <h2 className="text-xl font-semibold text-foreground">Live SMA Market Indicator</h2>
-            <p className="text-sm text-muted-foreground">{source ? `Source: ${source}` : "Loading analytics source..."}</p>
+            <p className="text-sm text-muted-foreground">
+              {source ? `Source: ${source}` : "Loading analytics source..."}
+            </p>
           </div>
-          {analyticsLoading && <div className="text-sm text-muted-foreground">Loading analytics...</div>}
+          {analyticsLoading && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              Loading analytics...
+            </div>
+          )}
         </div>
         <div className="h-80">
           {error ? (
-            <div className="h-full flex items-center justify-center text-center text-muted-foreground px-4">{error}</div>
+            <div className="h-full flex items-center justify-center text-center gap-3 text-muted-foreground px-4">
+              <div className="h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center">
+                <span className="text-destructive text-lg">!</span>
+              </div>
+              <span className="text-sm">{error}</span>
+            </div>
           ) : chartData.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-muted-foreground px-4">
-              {analyticsLoading ? "Fetching chart data..." : "No metrics available yet."}
+            <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground px-4">
+              {analyticsLoading ? (
+                <>
+                  <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                  <span className="text-sm">Fetching chart data...</span>
+                </>
+              ) : (
+                <>
+                  <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                    <span className="text-muted-foreground text-lg">?</span>
+                  </div>
+                  <span className="text-sm">No metrics available yet.</span>
+                </>
+              )}
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="time" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12 }} />
-                <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12 }} tickFormatter={(v) => `$${v}`} />
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "0.5rem", color: "hsl(var(--foreground))" }} />
+                <XAxis dataKey="time" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12, fontFamily: "var(--app-font-mono)" }} />
+                <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12, fontFamily: "var(--app-font-mono)" }} tickFormatter={(v) => `$${v}`} />
+                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "0.5rem", color: "hsl(var(--foreground))", fontFamily: "var(--app-font-mono)", fontSize: "12px" }} />
                 <Legend />
-                <Line type="monotone" dataKey="sma" stroke="hsl(var(--primary))" strokeWidth={3} name="SMA" dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="sma" stroke="hsl(var(--primary))" strokeWidth={2} name="SMA" dot={{ r: 3 }} activeDot={{ r: 5 }} />
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -260,12 +306,12 @@ export function AnalyticsView() {
       </div>
 
       {/* Order History */}
-      <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+      <div className="glass terminal-border rounded-xl p-6 shadow-sm">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-foreground">Order History Audit Table</h2>
           <div className="flex items-center gap-2">
             <label className="text-sm text-muted-foreground">Filter by Status:</label>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2 bg-background border border-border rounded-lg text-foreground text-sm">
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2 bg-background border border-border rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary">
               <option value="ALL">All</option>
               <option value="PENDING">Pending</option>
               <option value="EXECUTED">Executed</option>
@@ -289,22 +335,32 @@ export function AnalyticsView() {
             </thead>
             <tbody>
               {ordersLoading ? (
-                <tr><td colSpan={8} className="px-6 py-12 text-center">Loading orders...</td></tr>
+                <tr>
+                  <td colSpan={8} className="px-6 py-12">
+                    <div className="space-y-3">
+                      <Skeleton className="h-5 w-full rounded" />
+                      <Skeleton className="h-5 w-full rounded" />
+                      <Skeleton className="h-5 w-full rounded" />
+                    </div>
+                  </td>
+                </tr>
               ) : ordersError ? (
-                <tr><td colSpan={8} className="px-6 py-12 text-center text-red-500">{ordersError}</td></tr>
+                <tr><td colSpan={8} className="px-6 py-12 text-center text-danger">{ordersError}</td></tr>
               ) : filteredOrders.length === 0 ? (
                 <tr><td colSpan={8} className="px-6 py-12 text-center">No orders found matching your filters</td></tr>
               ) : (
                 filteredOrders.map((order) => (
                   <tr key={order.id} className="border-b border-border last:border-0">
-                    <td className="px-6 py-4 font-mono">{order.id}</td>
+                    <td className="px-6 py-4 font-mono text-terminal-data">{order.id}</td>
                     <td className="px-6 py-4 font-medium text-foreground">{order.asset_symbol}</td>
                     <td className="px-6 py-4">{order.order_type}</td>
-                    <td className={`px-6 py-4 font-semibold ${order.side === "BUY" ? "text-green-500" : "text-red-500"}`}>{order.side}</td>
-                    <td className="px-6 py-4">${order.price ? order.price.toFixed(2) : "-"}</td>
-                    <td className="px-6 py-4">{order.quantity.toFixed(4)}</td>
+                    <td className={cn("px-6 py-4 font-semibold", order.side === "BUY" ? "text-success" : "text-danger")}>{order.side}</td>
+                    <td className="px-6 py-4 text-terminal-data">${order.price ? order.price.toFixed(2) : "—"}</td>
+                    <td className="px-6 py-4 text-terminal-data">{order.quantity.toFixed(4)}</td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${order.status === "EXECUTED" ? "bg-green-500/10 text-green-500" : order.status === "PENDING" ? "bg-yellow-500/10 text-yellow-500" : "bg-red-500/10 text-red-500"}`}>
+                      <span className={cn("inline-flex px-2 py-1 rounded-full text-xs font-semibold",
+                        order.status === "EXECUTED" ? "bg-success/10 text-success" : order.status === "PENDING" ? "bg-warning/10 text-warning" : "bg-danger/10 text-danger"
+                      )}>
                         {order.status}
                       </span>
                     </td>
@@ -319,54 +375,65 @@ export function AnalyticsView() {
 
       {/* Live tools */}
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+        <div className="glass terminal-border rounded-xl p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-xl font-semibold text-foreground">Live Analytics Fetch</h2>
               <p className="text-sm text-muted-foreground">Hit the live analytics endpoint for a fast market snapshot.</p>
             </div>
-            <Button onClick={fetchLiveMarketAnalytics} disabled={liveCalcLoading} className="bg-primary">
-              {liveCalcLoading ? "Fetching..." : "Fetch Live"}
+            <Button onClick={fetchLiveMarketAnalytics} disabled={liveCalcLoading} className="bg-primary hover:bg-primary/80 font-semibold">
+              {liveCalcLoading ? (
+                <span className="flex items-center gap-2">
+                  <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  Fetching...
+                </span>
+              ) : (
+                "Fetch Live"
+              )}
             </Button>
           </div>
-          {liveCalcError && <p className="text-sm text-red-500 mb-3">{liveCalcError}</p>}
+          {liveCalcError && <p className="text-sm text-danger mb-3">{liveCalcError}</p>}
           {liveCalcData && (
             <div className="text-sm space-y-1">
-              <p className="text-muted-foreground">Source: <span className="text-foreground">{liveCalcData.source}</span></p>
-              <p className="text-muted-foreground">Status: <span className="text-foreground">{liveCalcData.status}</span></p>
-              <p className="text-muted-foreground">SMA points: <span className="text-foreground">{liveCalcData.metrics.simple_moving_average.length}</span></p>
+              <p className="text-muted-foreground">Source: <span className="text-foreground text-terminal-data">{liveCalcData.source}</span></p>
+              <p className="text-muted-foreground">Status: <span className="text-foreground text-terminal-data">{liveCalcData.status}</span></p>
+              <p className="text-muted-foreground">SMA points: <span className="text-foreground text-terminal-data">{liveCalcData.metrics.simple_moving_average.length}</span></p>
             </div>
           )}
         </div>
 
-        <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+        <div className="glass terminal-border rounded-xl p-6 shadow-sm">
           <h2 className="text-xl font-semibold text-foreground mb-2">WebSocket Stream</h2>
           <p className="text-sm text-muted-foreground mb-4">Connect to the live analytics WebSocket feed.</p>
           <div className="flex gap-2 mb-4">
-            <Button onClick={connectWebSocket} disabled={wsConnected} size="sm" className="bg-primary">Connect</Button>
+            <Button onClick={connectWebSocket} disabled={wsConnected} size="sm" className="bg-primary hover:bg-primary/80 font-semibold">Connect</Button>
             <Button onClick={disconnectWebSocket} disabled={!wsConnected} size="sm" variant="outline">Disconnect</Button>
           </div>
-          <div className={`text-xs mb-2 ${wsConnected ? "text-green-500" : "text-muted-foreground"}`}>
+          <div className={cn("text-xs mb-2 font-mono", wsConnected ? "text-success" : "text-muted-foreground")}>
             {wsConnected ? "● Connected" : "● Disconnected"}
           </div>
-          {wsError && <p className="text-xs text-red-500 mb-2">{wsError}</p>}
+          {wsError && <p className="text-xs text-danger mb-2">{wsError}</p>}
           {wsConnected && (
             <Button onClick={sendWebSocketMetric} size="sm" variant="outline" className="mb-3">Send Test Metric</Button>
           )}
           {wsMessages.length > 0 && (
-            <div className="bg-background rounded-lg p-3 max-h-32 overflow-y-auto text-xs font-mono text-foreground space-y-1">
+            <div className="bg-background rounded-lg p-3 max-h-32 overflow-y-auto text-xs font-mono text-foreground space-y-1 border border-border">
               {wsMessages.slice(-10).map((msg, i) => <div key={i}>{msg}</div>)}
             </div>
           )}
         </div>
 
-        <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+        <div className="glass terminal-border rounded-xl p-6 shadow-sm">
           <h2 className="text-xl font-semibold text-foreground mb-2">Analytics History</h2>
           <p className="text-sm text-muted-foreground mb-4">Paginated record of past analytics computations.</p>
           {historyLoading ? (
-            <p className="text-sm text-muted-foreground">Loading...</p>
+            <div className="space-y-3">
+              <Skeleton className="h-4 w-full rounded" />
+              <Skeleton className="h-4 w-full rounded" />
+              <Skeleton className="h-4 w-full rounded" />
+            </div>
           ) : historyError ? (
-            <p className="text-sm text-red-500">{historyError}</p>
+            <p className="text-sm text-danger">{historyError}</p>
           ) : history.length === 0 ? (
             <p className="text-sm text-muted-foreground">No history yet.</p>
           ) : (
@@ -374,7 +441,7 @@ export function AnalyticsView() {
               {history.map((r, i) => (
                 <div key={r.id ?? i} className="flex justify-between text-foreground">
                   <span className="text-muted-foreground truncate mr-2">{r.metric_name}</span>
-                  <span>{r.metric_value.toFixed(2)}</span>
+                  <span className="font-mono text-terminal-data">{r.metric_value.toFixed(2)}</span>
                 </div>
               ))}
               {totalHistoryPages && totalHistoryPages > 1 && (
