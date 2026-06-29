@@ -44,7 +44,7 @@ if port_already_in_use 22331; then
   echo "[start-all] frontend already on port 22331 — skipping"
 else
   echo "[start-all] Starting frontend on port 22331"
-  PORT=22331 pnpm --filter @workspace/qazvelo run dev &
+  PORT=22331 BASE_PATH=/ pnpm --filter @workspace/qazvelo run dev &
 fi
 
 # Python FastAPI backend — always starts here; blocks to keep script alive
