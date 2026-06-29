@@ -1,51 +1,49 @@
-# Python bytecode & cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-.venv/
-venv/
-ENV/
-.env
+# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
 
-# C++ Build and Compiled files
-build/
-CMakeCache.txt
-CMakeFiles/
-CMakeSettings.json
-Makefile
-cmake_install.cmake
-*.so
-*.dylib
-*.dll
-*.lib
-*.a
-*.obj
+# compiled output
+dist
+tmp
+out-tsc
+*.tsbuildinfo
+.expo
+.expo-shared
 
-# IDE & OS files
-.vscode/
-.DS_Store
-# --- Apache Kafka & Zookeeper Binaries and Logs ---
-kafka_2.13-3.4.0/
-kafka_2.13-3.4.0.tgz
-apache-zookeeper-*/
-zookeeper/
-kafka-logs/
-*.tgz
-*.tar.gz
-
-# Node
+# dependencies
 node_modules
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
-# Next.js
-.next
-out
-build
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
 
-# Env files
-.env*.local
-.env
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# misc
+/.sass-cache
+/connect.lock
+/coverage
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+testem.log
+/typings
+
+# System Files
+.DS_Store
+Thumbs.db
+
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md
+
+# Replit
+.cache/
+.local/
