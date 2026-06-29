@@ -17,6 +17,7 @@ from app.api.wallet import router as wallet_router
 from app.api.alerts import router as alerts_router
 from app.api.binance import router as binance_router, start_all_streams, stop_all_streams
 from app.api.ws_market import router as ws_market_router
+from app.api.health import router as health_router
 from app.core.database import engine, Base
 from app.core.cache import init_redis_from_env, get_redis_client
 from app.services.market_data import MarketDataService
@@ -134,6 +135,7 @@ app.add_middleware(
     expose_headers=["Content-Disposition"],
 )
 
+app.include_router(health_router,    prefix=settings.API_V1_STR)
 app.include_router(analytics_router, prefix=settings.API_V1_STR)
 app.include_router(ws_router,        prefix=settings.API_V1_STR)
 app.include_router(auth_router,      prefix=settings.API_V1_STR)
