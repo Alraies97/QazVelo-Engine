@@ -2,8 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
+import asyncio
+import json
+import logging
 import uvicorn
-import redis.asyncio as aioredis
+
 from fastapi_limiter import FastAPILimiter
 from app.core.config import settings
 from app.api.analytics import router as analytics_router
@@ -15,19 +18,14 @@ from app.api.alerts import router as alerts_router
 from app.api.binance import router as binance_router, start_all_streams, stop_all_streams
 from app.api.ws_market import router as ws_market_router
 from app.core.database import engine, Base
-from app.core.cache import set_redis_client
+from app.core.cache import init_redis_from_env, get_redis_client
 from app.services.market_data import MarketDataService
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
 from app.models.wallet import MockWallet, MockPosition, MockOrder
 from app.models.alerts import PriceAlert
-import asyncio
-import json
-import logging
 
 logger = logging.getLogger("QazVelo-Startup")
-
-_redis_client = None
 
 # Tickers whose price history is prefetched into Redis on every boot.
 # Must stay in sync with the ASSETS list in the React frontend.
@@ -40,15 +38,13 @@ _PREFETCH_TICKERS = [
 
 async def _warm_startup_cache() -> None:
     """Fetch historical prices for all frontend tickers concurrently and
-    write them into the Redis/fakeredis cache so the very first user request
-    for each asset is served from cache, not from a cold yfinance call."""
+    write them into Redis so the very first user request is served from cache."""
     logger.info("🔥 [QazVelo-Cache] Starting startup cache warm for %d tickers…", len(_PREFETCH_TICKERS))
 
     async def _warm_one(ticker: str, period: str) -> None:
         try:
             prices = await MarketDataService.get_historical_price(ticker, period)
             if prices:
-                # Also update the long-lived stale key.
                 await MarketDataService.warm_cache(ticker, period)
                 logger.info("✅ [QazVelo-Cache] Warmed %s (%s) — %d points", ticker, period, len(prices))
             else:
@@ -61,47 +57,32 @@ async def _warm_startup_cache() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _redis_client
-
-    # Create all database tables
+    # ── Database ──────────────────────────────────────────────────────────────
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    print("🗄️ [QazVelo-Engine] Database tables created successfully!")
+    print("🗄️  [QazVelo-Engine] Database tables created successfully!")
 
-    # Initialize Redis for rate limiting (fall back to fakeredis if unavailable)
-    try:
-        redis_client = aioredis.from_url(
-            settings.REDIS_URL, encoding="utf-8", decode_responses=True
-        )
-        await redis_client.ping()
-        await FastAPILimiter.init(redis_client)
-        _redis_client = redis_client
-        set_redis_client(redis_client)
-        print("✅ [QazVelo-Engine] Redis rate limiter initialized")
-    except Exception as exc:
-        print(f"⚠️  [QazVelo-Engine] Redis unavailable ({exc}), using in-memory fallback")
+    # ── Redis / fakeredis ─────────────────────────────────────────────────────
+    # init_redis_from_env() selects real Redis (prod) or fakeredis (dev) based
+    # on REDIS_URL and ENVIRONMENT env vars, and registers the singleton via
+    # cache.set_redis_client() so get_redis_client() works everywhere.
+    redis_client = await init_redis_from_env()
+    if redis_client is not None:
         try:
-            import fakeredis.aioredis as fakeredis_async
-            # lupa being installed enables Lua scripting in fakeredis automatically
-            fake = fakeredis_async.FakeRedis(decode_responses=True)
-            await FastAPILimiter.init(fake)
-            _redis_client = fake
-            set_redis_client(fake)
-            print("✅ [QazVelo-Engine] fakeredis rate limiter initialized (dev mode)")
-        except Exception as fe:
-            print(f"⚠️  [QazVelo-Engine] Could not init rate limiter: {fe}")
-            _redis_client = None
+            await FastAPILimiter.init(redis_client)
+            print("✅ [QazVelo-Engine] Rate limiter initialized")
+        except Exception as exc:
+            print(f"⚠️  [QazVelo-Engine] Rate limiter init failed (non-fatal): {exc}")
 
-    # Pre-warm the Redis cache for all frontend tickers in the background.
-    # create_task schedules work on the running event loop without blocking startup.
+    # ── Startup cache warm (background — does not block server ready) ─────────
     asyncio.create_task(_warm_startup_cache())
     print("🔥 [QazVelo-Engine] Cache warm-up task scheduled (BTC-USD, ETH-USD, AAPL)")
 
-    # Start Binance live price streams (public — no API key required for market data)
+    # ── Binance market streams ────────────────────────────────────────────────
     await start_all_streams()
     print("📡 [QazVelo-Engine] Binance market streams started (BTC, ETH)")
 
-    # Start Kafka producer (optional — graceful degradation when broker is absent)
+    # ── Kafka producer (optional — graceful degradation if broker absent) ─────
     try:
         from aiokafka import AIOKafkaProducer
         producer = AIOKafkaProducer(
@@ -120,12 +101,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    # ── Shutdown ──────────────────────────────────────────────────────────────
     await stop_all_streams()
     if getattr(app.state, "kafka_producer", None):
         await app.state.kafka_producer.stop()
-    if _redis_client is not None:
+    redis = get_redis_client()
+    if redis is not None:
         try:
-            await _redis_client.aclose()
+            await redis.aclose()
         except Exception:
             pass
     print("🛑 [QazVelo-Engine] Services stopped cleanly.")
@@ -172,9 +155,11 @@ async def root_health_check():
 
 
 if __name__ == "__main__":
+    import os
     uvicorn.run(
         "app.main:app",
-        host="localhost",
-        port=8000,
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8000")),
         reload=settings.DEBUG,
+        reload_dirs=["app"] if settings.DEBUG else None,
     )

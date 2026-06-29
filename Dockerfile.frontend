@@ -1,0 +1,28 @@
+# =============================================================================
+# QazVelo-Engine — Vite Frontend Dockerfile (development mode)
+# =============================================================================
+# Uses the Vite dev server so hot-reload works inside Docker Compose.
+# For a production static build, replace the CMD with a multi-stage build
+# that runs `pnpm build` and serves dist/ via nginx.
+# =============================================================================
+FROM node:20-alpine
+
+RUN npm install -g pnpm@latest
+
+WORKDIR /app
+
+# Copy workspace manifests first (better layer caching)
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY tsconfig.base.json tsconfig.json ./
+
+# Copy all workspace packages the frontend depends on
+COPY lib/ lib/
+COPY artifacts/qazvelo/ artifacts/qazvelo/
+
+# Install all workspace dependencies
+RUN pnpm install --frozen-lockfile
+
+EXPOSE 5000
+
+# PORT and BACKEND_URL are injected by docker-compose
+CMD ["pnpm", "--filter", "@workspace/qazvelo", "run", "dev"]

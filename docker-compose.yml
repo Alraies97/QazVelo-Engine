@@ -1,0 +1,117 @@
+# =============================================================================
+# QazVelo-Engine — Docker Compose
+# =============================================================================
+# Starts the full stack (Frontend, Express Proxy, FastAPI Backend, Redis) with:
+#   docker compose up          # foreground, all logs
+#   docker compose up -d       # detached
+#   docker compose up backend  # single service
+#
+# Prerequisites:
+#   1. cp .env.example .env  and fill in SECRET_KEY + DATABASE_URL
+#   2. docker compose up
+#
+# The DATABASE_URL defaults to the postgres service defined here.
+# To use an external managed database (Neon, Supabase, etc.) override it in .env.
+# =============================================================================
+
+services:
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    command: redis-server --save 60 1 --loglevel warning
+
+  # ── PostgreSQL (local dev — replace DATABASE_URL in .env for managed DB) ───
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: qazvelo_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── FastAPI Backend ────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8000"
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:password@postgres:5432/qazvelo_db}
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./backend
+          target: /app
+
+  # ── Express API Proxy ──────────────────────────────────────────────────────
+  proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${ENVIRONMENT:-development}
+      PORT: "8080"
+      FASTAPI_URL: http://backend:8000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+
+  # ── Vite Frontend ─────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: "5000"
+      BASE_PATH: /
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "5000:5000"
+    depends_on:
+      - backend
+    develop:
+      watch:
+        - action: sync
+          path: ./artifacts/qazvelo/src
+          target: /app/artifacts/qazvelo/src
+
+volumes:
+  redis_data:
+  postgres_data:

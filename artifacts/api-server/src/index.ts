@@ -1,27 +1,21 @@
 import app, { pythonProxy } from "./app";
 import { logger } from "./lib/logger";
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
-const port = Number(rawPort);
+// PORT is optional; defaults to 8080 so `node dist/index.mjs` works without
+// any environment configuration (useful for local Cursor / Docker runs).
+const port = Number(process.env.PORT ?? "8080");
 
 if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
+  logger.error({ port: process.env.PORT }, "Invalid PORT value");
+  process.exit(1);
 }
 
-const server = app.listen(port, (err) => {
+const server = app.listen(port, (err?: Error) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   }
-
-  logger.info({ port }, "Server listening");
+  logger.info({ port, fastapi: process.env.FASTAPI_URL ?? "http://127.0.0.1:8000" }, "Server listening");
 });
 
 // Attach WebSocket upgrade handler so the proxy can forward WS connections

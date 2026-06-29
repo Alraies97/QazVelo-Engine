@@ -5,6 +5,13 @@ import { createProxyMiddleware, type RequestHandler } from "http-proxy-middlewar
 import router from "./routes";
 import { logger } from "./lib/logger";
 
+// ── FastAPI backend origin ────────────────────────────────────────────────────
+// FASTAPI_URL can be overridden per environment:
+//   Local dev:     FASTAPI_URL=http://127.0.0.1:8000  (default)
+//   Docker:        FASTAPI_URL=http://backend:8000
+//   Remote/cloud:  FASTAPI_URL=https://api.example.com
+const fastapiUrl = process.env.FASTAPI_URL ?? "http://127.0.0.1:8000";
+
 const app: Express = express();
 
 app.use(
@@ -32,13 +39,16 @@ app.use(cors());
 // Body-parser middleware consumes the request stream; if it runs first, the
 // proxied POST body arrives empty at the FastAPI backend.
 export const pythonProxy: RequestHandler = createProxyMiddleware({
-  target: "http://127.0.0.1:8000",
+  target: fastapiUrl,
   changeOrigin: true,
   ws: true,
   pathFilter: "/api/v1",
   on: {
     error: (err, _req, res) => {
-      logger.warn({ err: (err as Error).message }, "FastAPI proxy error");
+      logger.warn(
+        { err: (err as Error).message, target: fastapiUrl },
+        "FastAPI proxy error",
+      );
       if (
         res &&
         "writeHead" in res &&
@@ -49,7 +59,7 @@ export const pythonProxy: RequestHandler = createProxyMiddleware({
           srv.writeHead(502, { "Content-Type": "application/json" });
           srv.end(
             JSON.stringify({
-              detail: "Python backend unavailable — is it running?",
+              detail: `Python backend unavailable at ${fastapiUrl} — is it running?`,
             }),
           );
         }

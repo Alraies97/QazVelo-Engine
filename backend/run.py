@@ -1,12 +1,17 @@
 """
 QazVelo FastAPI backend entry point.
 
-Ensures SECRET_KEY is available before the app loads:
-  1. If the SECRET_KEY env var is already set, use it.
-  2. Otherwise load from / generate backend/.dev_secret_key (gitignored).
-     This produces a stable random key across restarts in development.
-  3. In production set SECRET_KEY via Replit Secrets — the app will
-     refuse to start with a dev-generated key when ENVIRONMENT != development.
+Environment variables (all optional — safe defaults for local dev):
+  PORT        — TCP port uvicorn binds to            (default: 8000)
+  HOST        — Bind address                         (default: 0.0.0.0)
+  SECRET_KEY  — JWT signing key (≥32 chars)          (auto-generated in dev if absent)
+  ENVIRONMENT — "development" | "production"         (default: development)
+
+Secret-key bootstrap (development only):
+  1. SECRET_KEY env var already set → use it.
+  2. backend/.dev_secret_key file exists + ≥32 chars → load it.
+  3. Otherwise generate a random key, persist to .dev_secret_key, and use it.
+  In production ENVIRONMENT=production the app refuses to start without SECRET_KEY set.
 """
 
 import os
@@ -33,10 +38,15 @@ if not os.environ.get("SECRET_KEY"):
 import uvicorn
 
 if __name__ == "__main__":
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    environment = os.getenv("ENVIRONMENT", "development")
+    reload = environment != "production"
+
     uvicorn.run(
         "app.main:app",
-        host="localhost",
-        port=8000,
-        reload=True,
-        reload_dirs=["app"],
+        host=host,
+        port=port,
+        reload=reload,
+        reload_dirs=["app"] if reload else None,
     )
