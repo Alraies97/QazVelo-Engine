@@ -15,6 +15,7 @@ from app.api.alerts import router as alerts_router
 from app.api.binance import router as binance_router, start_all_streams, stop_all_streams
 from app.api.ws_market import router as ws_market_router
 from app.core.database import engine, Base
+from app.core.cache import set_redis_client
 from app.models.users import UserModel
 from app.models.analytics import AnalyticsModel
 from app.models.wallet import MockWallet, MockPosition, MockOrder
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI):
         await redis_client.ping()
         await FastAPILimiter.init(redis_client)
         _redis_client = redis_client
+        set_redis_client(redis_client)
         print("✅ [QazVelo-Engine] Redis rate limiter initialized")
     except Exception as exc:
         print(f"⚠️  [QazVelo-Engine] Redis unavailable ({exc}), using in-memory fallback")
@@ -50,6 +52,7 @@ async def lifespan(app: FastAPI):
             fake = fakeredis_async.FakeRedis(decode_responses=True)
             await FastAPILimiter.init(fake)
             _redis_client = fake
+            set_redis_client(fake)
             print("✅ [QazVelo-Engine] fakeredis rate limiter initialized (dev mode)")
         except Exception as fe:
             print(f"⚠️  [QazVelo-Engine] Could not init rate limiter: {fe}")

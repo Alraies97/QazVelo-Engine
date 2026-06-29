@@ -42,8 +42,43 @@ const ASSETS: AssetOption[] = [
 
 const TICK_MS = 3_000;
 const MAX_POINTS = 50;
+const CACHE_TTL_MS = 60_000; // 60 s — matches the backend rate-limit window
 
 type LiveSource = "connecting" | "binance" | "simulated";
+
+// ── sessionStorage cache helpers ─────────────────────────────────────────────
+
+interface CachedMarket {
+  pts: ChartPoint[];
+  fetchedAt: number; // Date.now()
+}
+
+function cacheKey(ticker: string): string {
+  return `qazvelo_market_${ticker}`;
+}
+
+function readCache(ticker: string): CachedMarket | null {
+  try {
+    const raw = sessionStorage.getItem(cacheKey(ticker));
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as CachedMarket;
+    if (Date.now() - entry.fetchedAt > CACHE_TTL_MS) return null; // expired
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(ticker: string, pts: ChartPoint[]): void {
+  try {
+    const entry: CachedMarket = { pts, fetchedAt: Date.now() };
+    sessionStorage.setItem(cacheKey(ticker), JSON.stringify(entry));
+  } catch {
+    // sessionStorage full or disabled — non-fatal
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function MarketOverview() {
   const [selectedAsset, setSelectedAsset] = React.useState<AssetOption>(ASSETS[0]);
@@ -63,34 +98,70 @@ export function MarketOverview() {
   const selectedAssetRef = React.useRef(selectedAsset);
   const baselineReadyRef = React.useRef(false);
   const fetchingRef = React.useRef(false);
+  // lastFetchRef persists throttle state across re-renders but resets on
+  // unmount/remount — sessionStorage handles cross-mount throttling instead.
   const lastFetchRef = React.useRef(0);
   const wsRef = React.useRef<ReconnectingWebSocket | null>(null);
   const wsTickTimeRef = React.useRef(0);
 
   React.useLayoutEffect(() => { selectedAssetRef.current = selectedAsset; }, [selectedAsset]);
 
+  /** Restore cached chart data without touching the network. Returns true if cache was used. */
+  const restoreFromCache = React.useCallback((ticker: string): boolean => {
+    const cached = readCache(ticker);
+    if (!cached || cached.pts.length === 0) return false;
+
+    const pts = cached.pts;
+    tickCounterRef.current = pts.length;
+    baselineReadyRef.current = true;
+    lastFetchRef.current = cached.fetchedAt; // keep throttle consistent
+
+    setData(pts);
+    setOpenPrice(pts[0]?.price ?? null);
+    setCurrentPrice(pts[pts.length - 1]?.price ?? null);
+    setLastUpdated(new Date(cached.fetchedAt));
+    setLoading(false);
+    setError(null);
+    setTicking(true);
+    return true;
+  }, []);
+
   const fetchData = React.useCallback(async (isInitial: boolean) => {
     if (fetchingRef.current) return;
     const asset = selectedAssetRef.current;
     const now = Date.now();
-    if (!isInitial && now - lastFetchRef.current < 60_000) return;
+
+    // For periodic (non-initial) refreshes: honour the 60-second throttle.
+    if (!isInitial && now - lastFetchRef.current < CACHE_TTL_MS) return;
+
+    // For initial loads (e.g. component remount): check sessionStorage first.
+    // If the cached data is still fresh, skip the network call entirely.
+    if (isInitial && restoreFromCache(asset.ticker)) return;
+
     fetchingRef.current = true;
     if (isInitial) setLoading(true); else setRefreshing(true);
     setError(null);
+
     try {
       const { data: resp } = await api.post<TickerCalculateResponse>(
         "/analytics/ticker-calculate",
         { ticker: asset.ticker, period: "1mo", calculation_window: 3 }
       );
       lastFetchRef.current = Date.now();
+
       const pts: ChartPoint[] = resp.metrics.simple_moving_average.map((v, i) => ({
         time: `T${i + 1}`,
         price: Math.round(v * 100) / 100,
       }));
+
       const first = pts[0]?.price ?? null;
       const last = pts[pts.length - 1]?.price ?? null;
       tickCounterRef.current = pts.length;
       baselineReadyRef.current = true;
+
+      // Persist to sessionStorage so the next remount skips a fetch.
+      writeCache(asset.ticker, pts);
+
       setOpenPrice(first);
       setCurrentPrice(last);
       setData(pts);
@@ -99,11 +170,23 @@ export function MarketOverview() {
       if (!isInitial) setChartKey((k) => k + 1);
     } catch (err) {
       const s = (err as { response?: { status?: number } }).response?.status;
-      const msg = s === 401
-        ? "Authentication required."
-        : s === 404
-        ? "Historical data unavailable for this ticker."
-        : "Unable to load market data. Is the backend running?";
+
+      // On rate-limit or service unavailable: try to fall back to stale cache
+      // so the user still sees a chart rather than an error screen.
+      if ((s === 429 || s === 503) && restoreFromCache(asset.ticker)) {
+        toast.warning("Market data temporarily rate-limited — showing cached chart.");
+        return;
+      }
+
+      const msg =
+        s === 401
+          ? "Authentication required."
+          : s === 429 || s === 503
+          ? "Market data provider is temporarily unavailable. Please try again shortly."
+          : s === 404
+          ? "Historical data unavailable for this ticker."
+          : "Unable to load market data. Is the backend running?";
+
       setError(msg);
       if (isInitial) toast.error(msg);
       setTicking(false);
@@ -112,7 +195,7 @@ export function MarketOverview() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [restoreFromCache]);
 
   React.useEffect(() => {
     setTicking(false);
@@ -209,9 +292,6 @@ export function MarketOverview() {
     }, TICK_MS);
     return () => clearInterval(timer);
   }, [ticking, selectedAsset.ticker, liveSource]);
-
-  // Note: Historical data is fetched once on asset selection. Live updates come from WebSocket.
-  // Do NOT call fetchData on wallet:updated — it triggers ticker-calculate and causes rate limiting.
 
   const pctChange =
     currentPrice !== null && openPrice !== null && openPrice > 0

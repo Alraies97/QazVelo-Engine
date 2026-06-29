@@ -6,6 +6,7 @@ from sqlalchemy.future import select
 from sqlalchemy import func
 from typing import List, Optional, Dict, Any
 from io import StringIO
+import asyncio
 import csv
 from datetime import datetime
 from fastapi_limiter.depends import RateLimiter
@@ -88,11 +89,17 @@ async def calculate_market_metrics(
     )
 
     if not prices or len(prices) == 0:
-         prices = [
-          {"timestamp": 1719680000, "open": 61000, "high": 61500, "low": 60800, "close": 61200, "volume": 100},
-          {"timestamp": 1719683600, "open": 61200, "high": 62000, "low": 61100, "close": 61800, "volume": 150},
-          {"timestamp": 1719687200, "open": 61800, "high": 62500, "low": 61700, "close": 62300, "volume": 200}
-         ]  
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"Historical price data is temporarily unavailable for '{payload.ticker}'. "
+                "The external data provider may be rate-limiting requests. Please retry in a moment."
+            ),
+        )
+
+    # Warm the stale-cache entry in the background so graceful fallback always
+    # has data even after the normal TTL expires.
+    asyncio.create_task(MarketDataService.warm_cache(payload.ticker, payload.period))
 
     result = await MarketAnalyticsService.process_market_indicators(
         prices=prices,
