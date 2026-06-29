@@ -12,10 +12,12 @@ import {
   Legend,
 } from "recharts";
 import { Button } from "@/components/ui/button";
-import api from "@/lib/api";
+import api, { getAccessToken } from "@/lib/api";
 import type {
   AnalyticsMetrics,
+  AnalyticsRecord,
   MockOrder,
+  PaginatedAnalyticsResponse,
   TickerCalculateResponse,
 } from "@/lib/types";
 
@@ -33,10 +35,34 @@ export function AnalyticsView() {
   const [ordersLoading, setOrdersLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [ordersError, setOrdersError] = React.useState<string | null>(null);
+  const [history, setHistory] = React.useState<AnalyticsRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = React.useState(false);
+  const [historyError, setHistoryError] = React.useState<string | null>(null);
+  const [historyPage, setHistoryPage] = React.useState(1);
+  const [historyTotal, setHistoryTotal] = React.useState<number | null>(null);
+  const [liveCalcLoading, setLiveCalcLoading] = React.useState(false);
+  const [liveCalcData, setLiveCalcData] = React.useState<TickerCalculateResponse | null>(null);
+  const [liveCalcError, setLiveCalcError] = React.useState<string | null>(null);
+  const [wsConnected, setWsConnected] = React.useState(false);
+  const [wsMessages, setWsMessages] = React.useState<string[]>([]);
+  const [wsError, setWsError] = React.useState<string | null>(null);
+  const wsRef = React.useRef<WebSocket | null>(null);
 
   React.useEffect(() => {
     void fetchMarketAnalytics();
     void fetchOrders();
+  }, []);
+
+  React.useEffect(() => {
+    void fetchAnalyticsHistory(historyPage);
+  }, [historyPage]);
+
+  React.useEffect(() => {
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
   }, []);
 
   const fetchMarketAnalytics = async () => {
@@ -86,6 +112,120 @@ export function AnalyticsView() {
     } finally {
       setOrdersLoading(false);
     }
+  };
+
+  const fetchAnalyticsHistory = async (page = 1) => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const { data } = await api.get<PaginatedAnalyticsResponse>(
+        '/analytics/history',
+        {
+          params: {
+            page,
+            page_size: 10,
+          },
+        }
+      );
+      setHistory(data.results ?? []);
+      setHistoryTotal(data.total);
+    } catch (err) {
+      console.error('Failed to load analytics history', err);
+      const status = (err as { response?: { status?: number } }).response?.status;
+      setHistoryError(
+        status === 401
+          ? 'Authentication required. Please sign in to access analytics history.'
+          : `Failed to load analytics history: ${(err as Error).message}`
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const fetchLiveMarketAnalytics = async () => {
+    setLiveCalcLoading(true);
+    setLiveCalcError(null);
+    try {
+      const { data } = await api.get<TickerCalculateResponse>('/analytics/live-calculate', {
+        params: {
+          metric_name: 'BTC-USD',
+          period: 5,
+        },
+      });
+      setLiveCalcData(data);
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      setLiveCalcError(
+        status === 401
+          ? 'Authentication required. Please sign in to fetch live market analytics.'
+          : `Failed to fetch live analytics: ${(err as Error).message}`
+      );
+    } finally {
+      setLiveCalcLoading(false);
+    }
+  };
+
+  const buildWebSocketUrl = () => {
+    const accessToken = getAccessToken();
+    if (!accessToken) {
+      throw new Error('Authentication required to connect to analytics websocket.');
+    }
+
+    const baseUrl = api.defaults.baseURL ?? window.location.origin;
+    const url = new URL(baseUrl);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.pathname = '/api/v1/ws/analytics';
+    url.searchParams.set('token', accessToken);
+    return url.toString();
+  };
+
+  const connectWebSocket = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    setWsError(null);
+    setWsMessages([]);
+    try {
+      const socket = new WebSocket(buildWebSocketUrl());
+      wsRef.current = socket;
+
+      socket.onopen = () => setWsConnected(true);
+      socket.onmessage = (event) => {
+        setWsMessages((messages) => [...messages, event.data]);
+      };
+      socket.onclose = () => setWsConnected(false);
+      socket.onerror = () => setWsError('WebSocket connection failed. Please check your network and login state.');
+    } catch (err) {
+      setWsError((err as Error).message);
+      setWsConnected(false);
+    }
+  };
+
+  const disconnectWebSocket = () => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setWsConnected(false);
+  };
+
+  const sendWebSocketMetric = () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      setWsError('WebSocket is not connected. Connect first to stream live analytics.');
+      return;
+    }
+
+    const payload = {
+      metric_name: 'BTC-USD',
+      metric_value: Math.round((Math.random() * 100 + 30000) * 100) / 100,
+      extra_payload: {
+        source: 'browser-demo',
+        timestamp: new Date().toISOString(),
+      },
+    };
+
+    wsRef.current.send(JSON.stringify(payload));
   };
 
   const chartData: ChartPoint[] = React.useMemo(() => {
@@ -283,6 +423,165 @@ export function AnalyticsView() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Live analytics and websocket tools */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">
+                Live Analytics Fetch
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Hit the live analytics endpoint for a fast market snapshot.
+              </p>
+            </div>
+            <Button
+              onClick={fetchLiveMarketAnalytics}
+              disabled={liveCalcLoading}
+              className="bg-primary"
+            >
+              {liveCalcLoading ? "Fetching..." : "Fetch Live"
+              }
+            </Button>
+          </div>
+          {liveCalcError && (
+            <div className="text-sm text-red-500 mb-4">{liveCalcError}</div>
+          )}
+          {liveCalcData ? (
+            <div className="space-y-3 text-sm text-foreground">
+              <div>
+                <span className="font-semibold">Source:</span> {liveCalcData.source}
+              </div>
+              <div>
+                <span className="font-semibold">Status:</span> {liveCalcData.status}
+              </div>
+              <div>
+                <span className="font-semibold">Computed at:</span>{" "}
+                {new Date(liveCalcData.computed_at).toLocaleString()}
+              </div>
+              <div>
+                <span className="font-semibold">SMA points:</span> {liveCalcData.metrics.simple_moving_average.length}
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">
+              No live analytics data loaded yet.
+            </div>
+          )}
+        </div>
+
+        <div className="bg-card border border-border rounded-xl p-6 shadow-sm lg:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">
+                Analytics History
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Browse historical analytics records stored for your account.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setHistoryPage((page) => Math.max(page - 1, 1))}
+                disabled={historyLoading || historyPage <= 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setHistoryPage((page) => page + 1)}
+                disabled={historyLoading || (historyTotal !== null && historyPage * 10 >= historyTotal)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+
+          {historyLoading ? (
+            <div className="py-12 text-center text-muted-foreground">
+              Loading history...
+            </div>
+          ) : historyError ? (
+            <div className="py-12 text-center text-red-500">
+              {historyError}
+            </div>
+          ) : history.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              No analytics history available.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-muted-foreground">
+                <thead className="bg-accent/50 text-foreground text-xs uppercase">
+                  <tr>
+                    <th className="px-4 py-3">Metric</th>
+                    <th className="px-4 py-3">Value</th>
+                    <th className="px-4 py-3">Timestamp</th>
+                    <th className="px-4 py-3">Payload</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((record) => (
+                    <tr key={record.id ?? `${record.metric_name}-${record.timestamp}`} className="border-b border-border last:border-0">
+                      <td className="px-4 py-3 text-foreground">{record.metric_name}</td>
+                      <td className="px-4 py-3">{record.metric_value}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {new Date(record.timestamp).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground break-words">
+                        {record.extra_payload ? JSON.stringify(record.extra_payload) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="mt-4 text-xs text-muted-foreground">
+            Page {historyPage} {historyTotal !== null ? `of ${Math.ceil(historyTotal / 10)}` : ""}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Analytics WebSocket Stream</h2>
+            <p className="text-sm text-muted-foreground">
+              Connect to the `/ws/analytics` socket and send sample metric payloads.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button onClick={connectWebSocket} disabled={wsConnected} className="bg-primary">
+              Connect
+            </Button>
+            <Button onClick={disconnectWebSocket} disabled={!wsConnected} variant="secondary">
+              Disconnect
+            </Button>
+            <Button onClick={sendWebSocketMetric} disabled={!wsConnected} variant="secondary">
+              Send Metric
+            </Button>
+          </div>
+        </div>
+
+        {wsError && <div className="text-sm text-red-500 mb-4">{wsError}</div>}
+        <div className="text-sm text-muted-foreground mb-4">
+          Status: {wsConnected ? "Connected" : "Disconnected"}
+        </div>
+        <div className="max-h-56 overflow-auto rounded-xl border border-border bg-background p-4 text-xs text-muted-foreground">
+          {wsMessages.length === 0 ? (
+            <div>No websocket messages yet.</div>
+          ) : (
+            wsMessages.map((message, index) => (
+              <div key={`${index}-${message}`} className="mb-2 break-words">
+                {message}
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
