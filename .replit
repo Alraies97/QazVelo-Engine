@@ -43,3 +43,8 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 packages = ["cargo", "libiconv", "libxcrypt", "postgresql", "rustc", "zlib"]
+
+[userenv]
+
+[userenv.shared]
+SECRET_KEY = "ce69afb37c25d0c9e09375486aed2495469328f3d891329ae24bf73e8f0e1ef657c8ff6ab40472f9222baa37a06da395"

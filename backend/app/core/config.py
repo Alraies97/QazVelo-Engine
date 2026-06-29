@@ -1,8 +1,13 @@
 from typing import List
-from pydantic import BeforeValidator
+from pydantic import BeforeValidator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing_extensions import Annotated
+from typing_extensions import Annotated, Self
 import json
+import logging
+
+logger = logging.getLogger("QazVelo-Config")
+
+_INSECURE_DEFAULT_KEY = "super-secret-key-change-this-in-production-100-percent"
 
 
 def parse_list(v: str | List[str]) -> List[str]:
@@ -25,7 +30,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     API_V1_STR: str = "/api/v1"
 
-    SECRET_KEY: str = "super-secret-key-change-this-in-production-100-percent"
+    SECRET_KEY: str = _INSECURE_DEFAULT_KEY
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -37,6 +42,19 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/qazvelo_db"
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     REDIS_URL: str = "redis://localhost:6379"
+
+    @model_validator(mode="after")
+    def validate_secrets(self) -> Self:
+        if self.SECRET_KEY == _INSECURE_DEFAULT_KEY:
+            if self.ENVIRONMENT != "development":
+                raise ValueError(
+                    "SECRET_KEY must be set to a secure random value in non-development environments. "
+                    "Set the SECRET_KEY environment variable or Replit secret before deploying."
+                )
+            logger.warning(
+                "⚠️  Using default insecure SECRET_KEY — set SECRET_KEY env var before deploying to production."
+            )
+        return self
 
 
 settings = Settings()
