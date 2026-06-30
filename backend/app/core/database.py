@@ -27,7 +27,7 @@ _async_url = _make_async_url(settings.DATABASE_URL)
 engine = create_async_engine(
    _async_url,
     echo=False,
-    connect_args={"ssl": False}
+    connect_args={"ssl": True}
 )
 
 AsyncSessionLocal = async_sessionmaker(
