@@ -53,12 +53,10 @@ async def init_redis_from_env() -> Optional[Any]:
         import redis.asyncio as aioredis  # type: ignore[import]
 
         # Upstash / TLS URLs start with rediss://
-        ssl = redis_url.startswith("rediss://")
         client = aioredis.from_url(
             redis_url,
             encoding="utf-8",
             decode_responses=True,
-            ssl_cert_reqs=None if ssl else None,
         )
         await client.ping()
 
