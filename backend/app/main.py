@@ -7,6 +7,7 @@ import json
 import logging
 import uvicorn
 
+from fastapi import Request
 from fastapi_limiter import FastAPILimiter
 from app.core.config import settings
 from app.api.analytics import router as analytics_router
@@ -27,6 +28,30 @@ from app.models.wallet import MockWallet, MockPosition, MockOrder
 from app.models.alerts import PriceAlert
 
 logger = logging.getLogger("QazVelo-Startup")
+
+
+async def _safe_rate_limit_identifier(request: Request) -> str:
+    """
+    Safe identifier for fastapi_limiter that never passes None to Redis.
+
+    Priority order:
+      1. X-Forwarded-For header  — set by Vite/Express proxy
+      2. X-Real-IP header        — set by nginx / some proxies
+      3. request.client.host     — direct connection (no proxy)
+      4. "127.0.0.1"             — absolute fallback (should never reach here)
+    """
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+
+    if request.client and request.client.host:
+        return request.client.host
+
+    return "127.0.0.1"
 
 # Tickers whose price history is prefetched into Redis on every boot.
 # Must stay in sync with the ASSETS list in the React frontend.
@@ -70,8 +95,11 @@ async def lifespan(app: FastAPI):
     redis_client = await init_redis_from_env()
     if redis_client is not None:
         try:
-            await FastAPILimiter.init(redis_client)
-            print("✅ [QazVelo-Engine] Rate limiter initialized")
+            await FastAPILimiter.init(
+                redis_client,
+                identifier=_safe_rate_limit_identifier,
+            )
+            print("✅ [QazVelo-Engine] Rate limiter initialized (proxy-safe identifier)")
         except Exception as exc:
             print(f"⚠️  [QazVelo-Engine] Rate limiter init failed (non-fatal): {exc}")
 
