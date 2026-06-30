@@ -30,12 +30,11 @@ export function clearTokens(): void {
 const DEFAULT_BASE_PATH = import.meta.env.VITE_API_BASE_PATH || "/api/v1";
 const resolvedBaseURL = import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_PATH;
 
+import axios from 'axios';
 const api = axios.create({
-  baseURL: resolvedBaseURL,
-  headers: {
-    "Content-Type": "application/json",
-  },
+ baseURL: import.meta.env.VITE_API_BASE_URL || "/api/v1",
 });
+export default api;
 
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
