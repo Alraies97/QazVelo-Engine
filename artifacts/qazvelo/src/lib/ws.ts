@@ -97,9 +97,22 @@ export class ReconnectingWebSocket {
 
 export function buildWebSocketUrl(path: string, symbol?: string): string {
   const token = getAccessToken();
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const url = new URL(`${protocol}//${window.location.host}${path}`);
+  
+  const envBaseUrl = import.meta.env.VITE_WS_BASE_URL;
+  
+  let baseUrl: string;
+
+  if (envBaseUrl) {
+    baseUrl = envBaseUrl;
+  } else {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    baseUrl = `${protocol}//${window.location.host}`;
+  }
+
+  const url = new URL(`${baseUrl}${path}`);
+  
   if (symbol) url.searchParams.set("symbol", symbol);
   if (token) url.searchParams.set("token", token);
+  
   return url.toString();
 }
