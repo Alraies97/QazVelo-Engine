@@ -75,3 +75,16 @@ replit.md
 .cursorrules.yaml
 .cursorrules.yml
 
+
+# Python bytecode
+**/__pycache__/
+*.py[cod]
+# Build outputs
+artifacts/api-server/dist/
+# Dev secrets
+backend/.dev_secret_key
+# Stray lockfiles
+package-lock.json
+# Replit Python environment
+.pythonlibs/
+
