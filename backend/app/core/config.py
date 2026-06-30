@@ -10,9 +10,13 @@ logger = logging.getLogger("QazVelo-Config")
 _INSECURE_DEFAULT_KEY = ""  # empty string → validator always rejects it in production
 
 
-def parse_list(v: str | List[str]) -> List[str]:
+def parse_list(v: str | List[str] | None) -> List[str]:
+    if v is None:
+        return ["*"]
     if isinstance(v, list):
         return v
+    if not v or v.strip() == "":
+        return ["*"]
     try:
         return json.loads(v)
     except (json.JSONDecodeError, TypeError):
@@ -74,3 +78,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
