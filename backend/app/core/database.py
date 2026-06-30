@@ -9,10 +9,15 @@ def _make_async_url(url: str) -> str:
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
     elif url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql+asyncpg://", 1)
-    # Remove sslmode query param (asyncpg uses ssl= connect_arg instead)
+    
+    # Parse URL and remove parameters that asyncpg doesn't recognize
     parsed = urllib.parse.urlparse(url)
     params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    
+    # Remove parameters that cause issues with asyncpg
     params.pop("sslmode", None)
+    params.pop("channel_binding", None)
+    
     new_query = urllib.parse.urlencode({k: v[0] for k, v in params.items()})
     url = parsed._replace(query=new_query).geturl()
     return url
@@ -37,3 +42,4 @@ class Base(DeclarativeBase):
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
+
