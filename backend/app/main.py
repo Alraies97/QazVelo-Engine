@@ -152,8 +152,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
-
+# Add CORS middleware FIRST (before TrustedHostMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -162,6 +161,9 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
 )
+
+# Add TrustedHostMiddleware AFTER CORS
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 
 app.include_router(health_router,    prefix=settings.API_V1_STR)
 app.include_router(analytics_router, prefix=settings.API_V1_STR)
@@ -193,3 +195,4 @@ if __name__ == "__main__":
         reload=settings.DEBUG,
         reload_dirs=["app"] if settings.DEBUG else None,
     )
+
