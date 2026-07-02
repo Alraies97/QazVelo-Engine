@@ -2,7 +2,7 @@
 
 > **Real-time market analytics and paper-trading platform** — live Binance price streams, SMA/volatility calculations, mock order execution, price alerts, and a full authentication layer.
 
-**🚀 Live Demo: [https://qazvelo-engine-frontend.vercel.app](https://qazvelo-engine-frontend.vercel.app)**
+**🚀 Live Demo: [https://qazvelo-engine.vercel.app](https://qazvelo-engine.vercel.app)**
 
 ---
 
